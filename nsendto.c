@@ -22,7 +22,7 @@ ssize_t nsendto(int sd, void*msg, ssize_t len, int flags,
   else {
     double x = drand48();
     if(x>dropProbability){
-      char* gmsg = malloc(len);
+      char* gmsg = (char*)malloc(len);
       for(i=0;i<len;i++){
 	gmsg[i] = ((char*)msg)[i];
 	x = drand48();

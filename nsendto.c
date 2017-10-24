@@ -32,8 +32,10 @@ ssize_t nsendto(int sd, void*msg, ssize_t len, int flags,
       }
       return sendto(sd,gmsg,len,flags,saddr,tolen);
     }
-    else
+    else {
+      std::cout << "Dropped package!\n";
       return len;
+    }
   }
 }
 

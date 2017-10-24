@@ -36,7 +36,7 @@ bool time_out(int sd) {
   struct pollfd pollarr[1];
   pollarr[0] = pollstr;
 
-  int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
+  int n = poll(pollarr,1,500); // 1 = array size, 100 = timeout value in ms
   // Received, read and go ahead
   if(n > 0){
     return false;

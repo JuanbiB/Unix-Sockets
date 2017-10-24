@@ -37,14 +37,15 @@ int main(int argc, char**argv)
   struct hostent *hptr;
 
   /* Set up address for local socket */
-
   memset((char *)&sad,0,sizeof(sad)); /* clear sockaddr structure */
   sad.sin_family = AF_INET;           /* set family to Internet     */
   sad.sin_addr.s_addr = INADDR_ANY;   /* set the local IP address   */
   sad.sin_port = htons((u_short)PORTNUMBER);/* convert to network byte order */
 
-  /* Create a socket */
+  /* Initialize package drop rate. */
+  ninit(0.7, 0);
 
+  /* Create a socket */
   sd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sd < 0) {
     perror("socket creation");
@@ -52,7 +53,6 @@ int main(int argc, char**argv)
   }
 
   /* Bind a local address to the socket */
-
   if (bind(sd, (struct sockaddr *)&sad, sizeof(sad)) < 0) {
     perror("bind");
     exit(1);
@@ -78,16 +78,28 @@ int main(int argc, char**argv)
     /* Inner loop.  Read and echo data received from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
 		    &fromlen);
-
+    
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
 
+    /* File transfer is done! Break out, handle termination. */
+    if (msg_type == '4') break; // 4 = FIN
+
     /* Not entirely sure how the sequence number thing goes. 
        But this is an idea. */
+    cout << "Sender seq num: " << sender_seq_num << endl;
+    cout << "My seq num: " << my_seq_num << endl;
     if (my_seq_num != sender_seq_num) {
-      cout << "Unsynced seq numbers!\n";
-      exit(1);
+      cout << "Unsynced seq numbers! They lost my ACK\n";
+      /* You should modularize this since it's repeated code from below.*/
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
+      resp[0] = '2'; // 2 = ACK
+      resp[1] = sender_seq_num; // 1 or 0
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      continue;
     }
 
     /* Extracting payload data. */
@@ -97,8 +109,6 @@ int main(int argc, char**argv)
       payload_data[j] = buf[i]; 
     }
 
-    /* File transfer is done! Break out, handle termination. */
-    if (msg_type == '4') break; // 4 = FIN
 
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen, f_recv);
@@ -126,7 +136,8 @@ int main(int argc, char**argv)
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
     resp[1] = sender_seq_num; // 1 or 0
-    int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+    //    int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+    int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
     my_seq_num = advance_seq_num(my_seq_num);
   }

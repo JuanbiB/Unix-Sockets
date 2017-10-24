@@ -28,6 +28,45 @@ int find_file_size (FILE* ptr) {
   return size;
 }
 
+bool time_out(int sd) {
+  // Set up a pollfd structure
+  struct pollfd pollstr;
+  pollstr.fd = sd; // the file descriptor for the socket you are using
+  pollstr.events = POLLIN; // the events on the descriptor that you want to poll for
+  struct pollfd pollarr[1];
+  pollarr[0] = pollstr;
+
+  int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
+  // Received, read and go ahead
+  if(n > 0){
+    return false;
+  }
+  // Timeout!
+  else if(n==0) {
+    return true;
+  }
+  else {
+    cout << "Other error\n"; exit(1);
+    exit(1);
+  }
+}
+
+bool handle_response(char* recvline, char  sender_seq_num) {
+  char msg_type = recvline[0];
+  char recv_seq_num = recvline[1];
+  if (msg_type == '2' && recv_seq_num == sender_seq_num) {
+    cout << "ACK frame recv  with correct seq num.\n";
+    return true;
+  }
+  else if (msg_type == '2' && recv_seq_num != sender_seq_num) {
+    cout << "ACK frame recv with incorrect seq number.\n Should send again.\n";
+  }
+  else {
+    cout << "Some other error\n";
+  }
+  return false;
+}
+
 int main(int argc, char* argv[]) {
   char* host_name; // Host to send file to. 
   int port_number; // Port number of host.
@@ -138,16 +177,13 @@ int main(int argc, char* argv[]) {
     
     read_so_far += read;
     // // Copy DATA into payload
-    int i = 2;
-    int count = 0;
-    while (count <= read) {
-      payload[i] = temp[count];
-      i++; count++;
+    for (int i = 2, j = 0; j <= read; i++, j++) {
+      payload[i] = temp[j];
     }
     // Dummies to hold future CRC code.
-    payload[read+2] = 'C';
-    payload[read+3] = 'R';
-    cout << payload << endl;
+    payload[2+read] = 'C';
+    payload[2+read+1] = 'R';
+
     /*  Send a message to the server  */
     int sent_bytes = 0;
     if((sent_bytes = sendto(sd,payload, read+4, 0,
@@ -155,49 +191,57 @@ int main(int argc, char* argv[]) {
       perror("sendto");
       exit(1);
     }
-    
     cout << "Sent: " << sent_bytes << " bytes.\n";
+
+    /* If we've reached the end of file. */
     if (read < MAXLINE-4) break;
 
-    // Set up a pollfd structure
-    struct pollfd pollstr;
-    pollstr.fd = sd; // the file descriptor for the socket you are using
-    pollstr.events = POLLIN; // the events on the descriptor that you want to poll for
-    struct pollfd pollarr[1];
-    pollarr[0] = pollstr;
-
-    int n = poll(pollarr,1,500); // 1 = array size, 100 = timeout value in ms
-    // Received, read and go ahead
-    if(n > 0){
+    /* Message received in timely fashion. */
+    bool timed_out = time_out(sd);
+    if (!timed_out) {
       if((nbytes=recvfrom(sd,recvline,strlen(payload),0,
 			  (struct sockaddr*)&sad, &fromlen))<0){
 	perror("recvfrom");
 	exit(1);
       }
-      char msg_type = recvline[0];
-      char recv_seq_num = recvline[1];
-      if (msg_type == '2' && recv_seq_num == sender_seq_num) {
-	cout << "ACK frame recv  with correct seq num.\n";
+      if (!handle_response(recvline, sender_seq_num)){
+	cout << "Should resend package.\n";
+	exit(1);
       }
-      else if (msg_type == '2' && recv_seq_num != sender_seq_num) {
-	cout << "ACK frame recv with incorrect seq number.\n Should send again.\n";
-      }
-      // FIN ACK and all that bullshit.
       else {
-	cout << "Non-ACK fame received\n";
+	/* Advance seq number. */
+	if (sender_seq_num == '1') { sender_seq_num = '0'; }
+	else {sender_seq_num = '1';}
       }
     }
-    // Timeout!
-    else if(n==0) {
-      cout << "Timeout! I don't know how to handle!\n";
-      exit(1);
-    }
+
+    /* We have a time out! */
     else {
-      cout << "Other error\n"; exit(1);
+      while (timed_out) {
+	cout << "Timeout! Resending last payload. With seq num: " << payload[1] << endl;
+	if((sent_bytes = sendto(sd,payload, read+4, 0,
+				(struct sockaddr*)&sad, sizeof(sad)))<0){
+	  perror("sendto");
+	  exit(1);
+	}
+	timed_out = time_out(sd);
+      }
+      /* Once we don't time out, receive payload. */
+      if((nbytes=recvfrom(sd,recvline,strlen(payload),0,
+			  (struct sockaddr*)&sad, &fromlen))<0){
+	perror("recvfrom");
+	exit(1);
+      }
+      if (!handle_response(recvline, sender_seq_num)){
+	cout << "Should resend package.\n";
+	exit(1);
+      }
+      else {
+	/* Advance seq number. */
+	if (sender_seq_num == '1') { sender_seq_num = '0'; }
+	else {sender_seq_num = '1';}
+      }
     }
-    /* Change seq number to next one. */
-    if (sender_seq_num == '1') { sender_seq_num = '0'; }
-    else {sender_seq_num = '1';}
   }
 
   // Handle termination of file transfer. 

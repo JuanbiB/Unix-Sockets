@@ -233,6 +233,7 @@ int main(int argc, char* argv[]) {
 	exit(1);
       }
       if (!handle_response(recvline, sender_seq_num)){
+	// TODO(juanbi): Implement payload resending here. 
 	cout << "Should resend package.\n";
 	exit(1);
       }

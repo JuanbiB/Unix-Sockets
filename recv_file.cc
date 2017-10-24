@@ -86,10 +86,12 @@ int main(int argc, char**argv)
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') break; // 4 = FIN
 
-    /* Not entirely sure how the sequence number thing goes. 
-       But this is an idea. */
     cout << "Sender seq num: " << sender_seq_num << endl;
     cout << "My seq num: " << my_seq_num << endl;
+
+    /* This basically means sender didn't get my last ACK. 
+       So I resend it and don't write payload to file (would be a 
+       a duplicate). */
     if (my_seq_num != sender_seq_num) {
       cout << "Unsynced seq numbers! They lost my ACK\n";
       /* You should modularize this since it's repeated code from below.*/
@@ -108,7 +110,6 @@ int main(int argc, char**argv)
     for (int i = 2, j = 0; i < mlen-2; i++, j++){
       payload_data[j] = buf[i]; 
     }
-
 
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen, f_recv);

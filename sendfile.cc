@@ -29,36 +29,25 @@ int find_file_size (FILE* ptr) {
 }
 
 int main(int argc, char* argv[]) {
- //  char* host_name; // Host to send file to. 
- //  int port_number; // Port number of host.
- //  char* file_name; // File to send.
- //  int drop_p; // Probablilty of dropping package.
- //  int byte_err_p; // Probability of there being a byte error.
+  char* host_name; // Host to send file to. 
+  int port_number; // Port number of host.
+  char* file_name; // File to send.
+  int drop_p; // Probablilty of dropping package.
+  int byte_err_p; // Probability of there being a byte error.
 
- //  if (argc < 4) {
- //    cout << "Not enough arguments!\n";
- //    exit(1);
- //  }
-
- //  // For testing
- //  if (strcmp(argv[1], "test")) {
- //  }
-  
- //  else if (argc == 5) {
- //    host_name = argv[1];
- //    port_number = ctoi(argv[2]);
- //    file_name = argv[3];
- //    drop_p = ctoi(argv[4]);
- //  }
- //  else { // just fail for now
- //    cout << "Nope\n";
- //    exit(1);
- // }
+  if (argc == 5) {
+    host_name = argv[1];
+    port_number = atoi(argv[2]);
+    file_name = argv[3];
+    drop_p = atoi(argv[4]);
+  }
+  else { 
+    cout << "No args. \n";
+  }
 
   // 1) Create socket with hostname and post.
   // 2) Bind to it.
   // 3) Start reading file and sending it over.
-  // HOW DO I CREATE A DATAGRAM SOCKET??
   struct  hostent  *ptrh;  /* pointer to a host table entry       */
   struct  sockaddr_in sad; /* structure to hold an IP address     */
   struct  sockaddr_in cad; /* structure to hold an IP address     */

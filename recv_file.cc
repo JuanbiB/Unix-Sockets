@@ -20,19 +20,6 @@
 
 using namespace std;
 
-/*------------------------------------------------------------------------
- * Program:   echo server
- *
- * Purpose:   allocate a datagram socket and then repeatedly 
- *            execute the following:
- *                read data from the socket
- *                write the data back to the socket
- *
- * Syntax:    eserver
- *
- *------------------------------------------------------------------------
- */
-
 char advance_seq_num (char seq_num) {
   if (seq_num == '0')
     return '1';

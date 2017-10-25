@@ -43,7 +43,7 @@ int main(int argc, char**argv)
   sad.sin_port = htons((u_short)PORTNUMBER);/* convert to network byte order */
 
   /* Initialize package drop rate. */
-  ninit(0.7, 0);
+  ninit(0, 0);
 
   /* Create a socket */
   sd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -69,16 +69,19 @@ int main(int argc, char**argv)
   }
 
   /* Main server loop - receive and handle requests */
-  string file_name = "response.txt";
-  FILE* f_recv = fopen(file_name.c_str(), "w");
+  string file_name = "response";
+  FILE* f_recv = fopen(file_name.c_str(), "wb");
   char my_seq_num = '0';
+  int total = 0;
   
   while (true) {
-    memset(buf, 0, sizeof(buf));
+
     /* Inner loop.  Read and echo data received from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
 		    &fromlen);
-    
+
+
+
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
@@ -107,13 +110,17 @@ int main(int argc, char**argv)
     /* Extracting payload data. */
     char payload_data[BSIZE];
     memset(payload_data, 0, BSIZE);
-    for (int i = 2, j = 0; i < mlen-2; i++, j++){
+    cout << "just got: " << mlen << endl;
+    for (int i = 2, j = 0; i < mlen-2; i++, j++) {
       payload_data[j] = buf[i]; 
     }
+    cout << endl;
+    memset(buf, 0, sizeof(buf));
 
     /* Write payload data to file! */
-    int w = fwrite(payload_data, 1, mlen, f_recv);
-    cout << "writing: " << buf << endl;
+    int w = fwrite(payload_data, 1, mlen-4, f_recv);
+    total += w;
+    cout << "writing: " << w << " bytes" << endl;
     
     if(mlen<0){
       perror("recvfrom");
@@ -143,6 +150,7 @@ int main(int argc, char**argv)
     my_seq_num = advance_seq_num(my_seq_num);
   }
 
+  cout << "wrote a total of: " << total << endl;
   // Handle termination! 
   fclose(f_recv);
 }

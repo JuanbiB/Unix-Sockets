@@ -36,7 +36,7 @@ bool time_out(int sd) {
   struct pollfd pollarr[1];
   pollarr[0] = pollstr;
 
-  int n = poll(pollarr,1,500); // 1 = array size, 100 = timeout value in ms
+  int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
   // Received, read and go ahead
   if(n > 0){
     return false;
@@ -67,6 +67,26 @@ bool handle_response(char* recvline, char  sender_seq_num) {
   return false;
 }
 
+void resend_message(int sd, char* payload, int len, struct sockaddr* sad,
+		    bool timed_out, char* recvline) {
+  while (timed_out) {
+    cout << "Timeout! Resending last payload. With seq num: " << payload[1] << endl;
+    if((sendto(sd,payload, len, 0,
+	       sad, sizeof(struct sockaddr)))<0){
+      perror("sendto");
+      exit(1);
+    }
+    timed_out = time_out(sd);
+  }
+  socklen_t size = sizeof(struct sockaddr_in);
+  if((recvfrom(sd,recvline, len, 0,
+	       sad, &size))<0){
+    perror("recvfrom");
+    exit(1);
+  }
+}
+
+
 int main(int argc, char* argv[]) {
   char* host_name; // Host to send file to. 
   int port_number; // Port number of host.
@@ -80,8 +100,11 @@ int main(int argc, char* argv[]) {
     file_name = argv[3];
     drop_p = atoi(argv[4]);
   }
-  else { 
-    cout << "No args. \n";
+  else if (argc == 2) {
+    file_name = argv[1];
+  }
+  else {
+    cout << "please specify at least file name\n.";
   }
 
   // 1) Create socket with hostname and post.
@@ -112,11 +135,12 @@ int main(int argc, char* argv[]) {
 
   /* Check host argument and assign host name. */
 
-  if (argc > 1) {
-    host = argv[1];         /* if host argument specified   */
-  } else {
-    host = "localhost";
-  }
+  // if (argc > 1) {
+  //   host = argv[1];         /* if host argument specified   */
+  // } else {
+  //   host = "localhost";
+  // }
+  host = "localhost";
 
   /* Convert host name to equivalent IP address and copy to sad. */
   if((ptrh=gethostbyname(host.c_str()))==0){
@@ -153,8 +177,7 @@ int main(int argc, char* argv[]) {
   //  while (fgets(sendline,MAXLINE,stdin) != NULL) {
   
   // Open file and find it's size. 
-  string file = "send.txt";
-  FILE* f_send = fopen(file.c_str(), "r");
+  FILE* f_send = fopen(file_name, "r");
   if (!f_send) {
     cout << "Couldn't open file" << endl;
     exit(1);
@@ -173,7 +196,8 @@ int main(int argc, char* argv[]) {
     char temp[MAXLINE-4];
     // Leave room for code, seq_num and CRC. 
     memset(temp, 0, MAXLINE-4);
-       int read = fread(temp, 1, MAXLINE-4, f_send);
+    int read = fread(temp, 1, MAXLINE-4, f_send);
+    cout << "read: " << read << endl;
     
     read_so_far += read;
     // // Copy DATA into payload
@@ -204,46 +228,29 @@ int main(int argc, char* argv[]) {
 	perror("recvfrom");
 	exit(1);
       }
-      if (!handle_response(recvline, sender_seq_num)){
-	cout << "Should resend package.\n";
-	exit(1);
-      }
-      else {
-	/* Advance seq number. */
-	if (sender_seq_num == '1') { sender_seq_num = '0'; }
-	else {sender_seq_num = '1';}
+      /* Keep resending package until we get right seq num. */
+      while (!handle_response(recvline, sender_seq_num)){
+	resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
+		       recvline);
       }
     }
 
     /* We have a time out! */
     else {
-      while (timed_out) {
-	cout << "Timeout! Resending last payload. With seq num: " << payload[1] << endl;
-	if((sent_bytes = sendto(sd,payload, read+4, 0,
-				(struct sockaddr*)&sad, sizeof(sad)))<0){
-	  perror("sendto");
-	  exit(1);
-	}
-	timed_out = time_out(sd);
-      }
-      /* Once we don't time out, receive payload. */
-      if((nbytes=recvfrom(sd,recvline,strlen(payload),0,
-			  (struct sockaddr*)&sad, &fromlen))<0){
-	perror("recvfrom");
-	exit(1);
-      }
-      if (!handle_response(recvline, sender_seq_num)){
-	// TODO(juanbi): Implement payload resending here. 
-	cout << "Should resend package.\n";
-	exit(1);
-      }
-      else {
-	/* Advance seq number. */
-	if (sender_seq_num == '1') { sender_seq_num = '0'; }
-	else {sender_seq_num = '1';}
+      /* Keep resending until we get something. */
+      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
+		     recvline);
+      /* Keep resending until we get right seq num.  */
+      while (!handle_response(recvline, sender_seq_num)) {
+	resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
+		     recvline);
       }
     }
+    /* Advance seq number after getting a package with correct seq num. */
+    if (sender_seq_num == '1') { sender_seq_num = '0'; }
+    else {sender_seq_num = '1';}
   }
+
 
   // Handle termination of file transfer. 
   int sent_bytes;

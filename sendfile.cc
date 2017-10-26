@@ -15,7 +15,6 @@
 
 #include "nsendto.c"
 
-#define PORTNUMBER       5193           
 #define MAXBUFFER        40
 #define MAXLINE          40
 #define TIMEOUT          100
@@ -56,7 +55,6 @@ bool handle_response(char* recvline, char  sender_seq_num) {
   char recv_seq_num = recvline[1];
 
   if (msg_type == '2' && recv_seq_num == sender_seq_num) {
-    cout << "Receiver seq num: " << recv_seq_num << endl;
     cout << "ACK frame recv with correct seq num.\n";
     return true;
   }
@@ -65,7 +63,6 @@ bool handle_response(char* recvline, char  sender_seq_num) {
     return true;
   }
   else if (msg_type == '2' && recv_seq_num != sender_seq_num) {
-    cout << "Receiver seq num: " << recv_seq_num << endl;
     cout << "ACK frame recv with incorrect seq number.\nShould send again.\n";
   }
   return false;
@@ -99,23 +96,25 @@ int main(int argc, char* argv[]) {
   char* host_name; // Host to send file to. 
   int port_number; // Port number of host.
   char* file_name; // File to send.
-  int drop_p; // Probablilty of dropping package.
+  double drop_p; // Probablilty of dropping package.
   int byte_err_p; // Probability of there being a byte error.
-  ninit(0.3, 0.0);
+  
+  cout << argc;
 
-  if (argc == 5) {
+  if (argc > 5) {
     host_name = argv[1];
     port_number = atoi(argv[2]);
     file_name = argv[3];
     drop_p = atoi(argv[4]);
-  }
-  else if (argc == 2) {
-    file_name = argv[1];
+    byte_err_p = atoi(argv[5]);
   }
   else {
-    cout << "please specify at least file name\n.";
+    cout << "Not enough arguments.\n";
+    exit(1);
   }
 
+  ninit(drop_p, byte_err_p);
+  
   // 1) Create socket with hostname and post.
   // 2) Bind to it.
   // 3) Start reading file and sending it over.
@@ -125,25 +124,23 @@ int main(int argc, char* argv[]) {
   int     sd;              /* socket descriptor                   */
   socklen_t     fromlen = sizeof(sad);
   int     nbytes;          /* number of bytes in reply message    */
-  string host;           /* pointer to host name                */
   char payload[MAXLINE]; /* send buffer                       */
   char recvline[MAXLINE]; /* receive buffer                    */
 
   /*  Set up address for echo server  */
   memset((char *)&sad,0,sizeof(sad)); /* clear sockaddr structure */
   sad.sin_family = AF_INET;         /* set family to Internet     */
-  sad.sin_port = htons((u_short)PORTNUMBER); /* convert port number to 
+  sad.sin_port = htons((u_short)port_number); /* convert port number to 
 						network byte order */
 
   /*  Set up address for local socket  */
-
   memset((char *)&cad,0,sizeof(sad)); /* clear sockaddr structure */
   cad.sin_family = AF_INET;         /* set family to Internet     */
   cad.sin_addr.s_addr = INADDR_ANY; /* set the local IP address   */
   cad.sin_port = 0;  /* use any available port */
 
   /* Check host argument and assign host name. */
-  host = "localhost";
+  string host(host_name);
 
   /* Convert host name to equivalent IP address and copy to sad. */
   if((ptrh=gethostbyname(host.c_str()))==0){

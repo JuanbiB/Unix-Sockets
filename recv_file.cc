@@ -18,6 +18,7 @@
 
 #define PORTNUMBER      5193            /* default protocol port number */
 #define BSIZE           40              /* size of data buffer          */
+#define TIMEOUT         500
 
 using namespace std;
 
@@ -35,7 +36,7 @@ bool time_out(int sd) {
   struct pollfd pollarr[1];
   pollarr[0] = pollstr;
 
-  int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
+  int n = poll(pollarr,1,TIMEOUT); // 1 = array size, 100 = timeout value in ms
   // Received, read and go ahead
   if(n > 0){
     return false;
@@ -67,7 +68,7 @@ int main(int argc, char**argv)
   sad.sin_port = htons((u_short)PORTNUMBER);/* convert to network byte order */
 
   /* Initialize package drop rate. */
-  ninit(0.2, 0);
+  ninit(0, 0);
 
   /* Create a socket */
   sd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -100,83 +101,74 @@ int main(int argc, char**argv)
   
   while (true) {
     /* Inner loop.  Read and echo data received from client. */
-    mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
-        &fromlen);
+    cout << endl;
+    cout << "<----------->" << endl;
+
     bool timed_out = time_out(sd);
+    //    bool timed_out = false;
+    
+    /* While there is a timeout, keep asking for payload. 
+       This happens if the payload gets lost through 'sender->receiver'. */
+    while (timed_out) {
+      cout << "Timeout, resending!" << endl;
+      char resp[2];
+      memset(resp, 0, 2);
+      resp[0] = '2'; // 2 = ACK
+      cout << "SENDING ACK 1\n";
+      resp[1] = my_seq_num;
+      int sent = nsendto(sd, resp, 2, 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      timed_out = time_out(sd);
+    }
+    mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
+		    &fromlen);
+    cout << "received: " << buf << endl;
+    cout << "size: " << mlen << endl;
+    /* Once there's something to receive, we receive it. */
+    // mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
+    //     &fromlen);
+    if(mlen<0){
+      perror("recvfrom");
+      exit(1);
+    }
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
 
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
-      cout << "FIN received." << endl;
-      char resp[BSIZE];
-      memset(resp, 0, BSIZE);
-      resp[0] = '5'; // 5 = FINACK
-      resp[1] = sender_seq_num; // 1 or 0
-      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
-      if (sent < 0) cout << "ERROR\n";
-      cout << "SEQ: " << sender_seq_num << endl;
-      /*
-        I don't understand where an incorrect sequence number is being sent. This is preventing
-        the sender from acknowledging that I am sending back a FINACK! Because whenever I handle response
-        on sender side, it thinks I've sent an ACK frame with an incorrect sequence number.
-      */
       break;
     }
-    
-    /* Step 3  (mani) */
-    while (timed_out) {
-      cout << "Timeout! Resending.!" << endl;
-      char resp[BSIZE];
-      memset(resp, 0, BSIZE);
-      resp[0] = '2'; // 2 = ACK
-      resp[1] = sender_seq_num; // 1 or 0
-      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
-      if (sent < 0) cout << "ERROR\n";
-      cout << "SEQ: " << sender_seq_num << endl;
-      timed_out = time_out(sd);
-    }
-
-    cout << "Sender seq num: " << sender_seq_num << endl;
-    cout << "My seq num: " << my_seq_num << endl;
-
     /* This basically means sender didn't get my last ACK. 
        So I resend it and don't write payload to file (would be a 
        a duplicate). */
     if (my_seq_num != sender_seq_num) {
-      cout << "Unsynced seq numbers! They lost my ACK\n";
+      cout << "Unsynced seq numbers (lost ACK)! Resending.\n";
       /* You should modularize this since it's repeated code from below.*/
-      char resp[BSIZE];
-      memset(resp, 0, BSIZE);
+      char resp[2];
+      memset(resp, 0, 2);
       resp[0] = '2'; // 2 = ACK
-      resp[1] = sender_seq_num; // 1 or 0
-      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      cout << "SENDING ACK 2.\n";
+      resp[1] = sender_seq_num;
+      int sent = nsendto(sd, resp, 2, 0, (struct sockaddr *)&cad, fromlen);
       if (sent < 0) cout << "ERROR\n";
-      cout << "SEQ: " << sender_seq_num << endl;
       continue;
     }
 
     /* Extracting payload data. */
     char payload_data[BSIZE];
     memset(payload_data, 0, BSIZE);
-    cout << "just got: " << mlen << endl;
     for (int i = 2, j = 0; i < mlen-2; i++, j++) {
       payload_data[j] = buf[i]; 
     }
+    cout << "Payload data: " << payload_data << endl;
     cout << endl;
     memset(buf, 0, sizeof(buf));
 
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen-4, f_recv);
     total += w;
-    cout << "writing: " << w << " bytes" << endl;
-    
-    if(mlen<0){
-      perror("recvfrom");
-      exit(1);
-    }
-    
+
     /*  Display a message showing the client's address */
     printf("%d bytes received from ", mlen);
     if((hptr = gethostbyaddr((char*)&cad.sin_addr,
@@ -188,17 +180,33 @@ int main(int argc, char**argv)
       printf("%s/%s port %d\n",
 	     hptr->h_name,inet_ntoa(cad.sin_addr),ntohs(cad.sin_port));
     }
-    
-    /*  Send ACK to client */
+    cout << "Receiver: Wrote " << w << " to file.\n";
+    /*  Send ACK to client verifying that we got the payload and
+        wrote it to file. */
     char resp[BSIZE];
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
+    cout << "SENDING ACK 3\n";
     resp[1] = sender_seq_num; // 1 or 0
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
     my_seq_num = advance_seq_num(my_seq_num);
-    cout << "SEQ: " << sender_seq_num << endl;
   }
+
+  cout << "FIN received" << endl;
+  char resp[1];
+  memset(resp, 0, 1);
+  resp[0] = '5'; // 5 = FINACK
+  cout << endl;
+  cout << "Sending FINACK\n";
+  int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+  if (sent < 0) cout << "ERROR\n";
+  /*
+    I don't understand where an incorrect sequence number is being sent. This is preventing
+    the sender from acknowledging that I am sending back a FINACK! Because whenever I handle response
+    on sender side, it thinks I've sent an ACK frame with an incorrect sequence number.
+  */
+  //      exit(1);
 
   cout << "wrote a total of: " << total << endl;
   // Handle termination! 

@@ -10,3 +10,9 @@ send
 recv
 
 recv
+
+*.png
+
+*.pdf
+
+*.txt

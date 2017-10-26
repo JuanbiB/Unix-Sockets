@@ -17,7 +17,7 @@
 #include "nsendto.c"
 
 #define PORTNUMBER      5193            /* default protocol port number */
-#define BSIZE           40            /* size of data buffer          */
+#define BSIZE           40              /* size of data buffer          */
 
 using namespace std;
 
@@ -67,7 +67,7 @@ int main(int argc, char**argv)
   sad.sin_port = htons((u_short)PORTNUMBER);/* convert to network byte order */
 
   /* Initialize package drop rate. */
-  ninit(0, 0);
+  ninit(0.2, 0);
 
   /* Create a socket */
   sd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -99,27 +99,13 @@ int main(int argc, char**argv)
   int total = 0;
   
   while (true) {
-
     /* Inner loop.  Read and echo data received from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
         &fromlen);
-        
+    bool timed_out = time_out(sd);
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
-
-    /* Step 3  (mani) */
-    bool timed_out = time_out(sd);
-    while (timed_out) {
-      char resp[BSIZE];
-      memset(resp, 0, BSIZE);
-      resp[0] = '2'; // 2 = ACK
-      resp[1] = sender_seq_num; // 1 or 0
-      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
-      if (sent < 0) cout << "ERROR\n";
-      cout << "fuuuck" << endl;
-      timed_out = time_out(sd);
-    }
 
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
@@ -130,8 +116,27 @@ int main(int argc, char**argv)
       resp[1] = sender_seq_num; // 1 or 0
       int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
       if (sent < 0) cout << "ERROR\n";
+      cout << "SEQ: " << sender_seq_num << endl;
+      /*
+        I don't understand where an incorrect sequence number is being sent. This is preventing
+        the sender from acknowledging that I am sending back a FINACK! Because whenever I handle response
+        on sender side, it thinks I've sent an ACK frame with an incorrect sequence number.
+      */
       break;
-    } 
+    }
+    
+    /* Step 3  (mani) */
+    while (timed_out) {
+      cout << "Timeout! Resending.!" << endl;
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
+      resp[0] = '2'; // 2 = ACK
+      resp[1] = sender_seq_num; // 1 or 0
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      cout << "SEQ: " << sender_seq_num << endl;
+      timed_out = time_out(sd);
+    }
 
     cout << "Sender seq num: " << sender_seq_num << endl;
     cout << "My seq num: " << my_seq_num << endl;
@@ -148,6 +153,7 @@ int main(int argc, char**argv)
       resp[1] = sender_seq_num; // 1 or 0
       int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
       if (sent < 0) cout << "ERROR\n";
+      cout << "SEQ: " << sender_seq_num << endl;
       continue;
     }
 
@@ -188,10 +194,10 @@ int main(int argc, char**argv)
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
     resp[1] = sender_seq_num; // 1 or 0
-    //    int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
     my_seq_num = advance_seq_num(my_seq_num);
+    cout << "SEQ: " << sender_seq_num << endl;
   }
 
   cout << "wrote a total of: " << total << endl;

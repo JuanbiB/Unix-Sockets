@@ -54,12 +54,16 @@ bool time_out(int sd) {
 bool handle_response(char* recvline, char  sender_seq_num) {
   char msg_type = recvline[0];
   char recv_seq_num = recvline[1];
+  cout << "recv: " << recv_seq_num << endl;
   if (msg_type == '2' && recv_seq_num == sender_seq_num) {
-    cout << "ACK frame recv  with correct seq num.\n";
+    cout << "ACK frame recv with correct seq num.\n";
     return true;
   }
+  else if (msg_type == '5') {
+    cout << "FINACK bish" << endl;
+  }
   else if (msg_type == '2' && recv_seq_num != sender_seq_num) {
-    cout << "ACK frame recv with incorrect seq number.\n Should send again.\n";
+    cout << "ACK frame recv with incorrect seq number.\nShould send again.\n";
   }
   else {
     cout << "Some other error\n";
@@ -204,7 +208,7 @@ int main(int argc, char* argv[]) {
 
     /*  Send a message to the server  */
     int sent_bytes = 0;
-    if((sent_bytes = sendto(sd,payload, read+4, 0,
+    if((sent_bytes = sendto(sd, payload, read+4, 0,
 			    (struct sockaddr*)&sad, sizeof(sad)))<0){
       perror("sendto");
       exit(1);
@@ -236,7 +240,7 @@ int main(int argc, char* argv[]) {
 		     recvline);
       /* Keep resending until we get right seq num.  */
       while (!handle_response(recvline, sender_seq_num)) {
-	resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
+	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
 		     recvline);
       }
     }
@@ -251,12 +255,16 @@ int main(int argc, char* argv[]) {
   char end[MAXLINE];
   memset(end, 0, MAXLINE);
   end[0] = '4';
+  end[1] = sender_seq_num;
   cout << "Sent ACK 4 " << endl;
-  if((sent_bytes = sendto(sd,end, 1, 0,
+  if((sent_bytes = sendto(sd,end, 2, 0,
 			  (struct sockaddr*)&sad, sizeof(sad)))<0){
     perror("sendto");
     exit(1);
   }
+  cout << "sender: " << sender_seq_num << endl;
+  handle_response(recvline, sender_seq_num);
+
   /* Close the socket. */
   fclose(f_send);
   close(sd);

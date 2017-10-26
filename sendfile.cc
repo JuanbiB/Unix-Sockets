@@ -38,11 +38,11 @@ bool time_out(int sd) {
 
   int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
   // Received, read and go ahead
-  if(n > 0){
+  if(n > 0) {
     return false;
   }
   // Timeout!
-  else if(n==0) {
+  else if(n == 0) {
     return true;
   }
   else {
@@ -134,12 +134,6 @@ int main(int argc, char* argv[]) {
   cad.sin_port = 0;  /* use any available port */
 
   /* Check host argument and assign host name. */
-
-  // if (argc > 1) {
-  //   host = argv[1];         /* if host argument specified   */
-  // } else {
-  //   host = "localhost";
-  // }
   host = "localhost";
 
   /* Convert host name to equivalent IP address and copy to sad. */
@@ -225,12 +219,12 @@ int main(int argc, char* argv[]) {
     if (!timed_out) {
       if((nbytes=recvfrom(sd,recvline,strlen(payload),0,
 			  (struct sockaddr*)&sad, &fromlen))<0){
-	perror("recvfrom");
-	exit(1);
+	      perror("recvfrom");
+	      exit(1);
       }
       /* Keep resending package until we get right seq num. */
       while (!handle_response(recvline, sender_seq_num)){
-	resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
+	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
 		       recvline);
       }
     }
@@ -257,6 +251,7 @@ int main(int argc, char* argv[]) {
   char end[MAXLINE];
   memset(end, 0, MAXLINE);
   end[0] = '4';
+  cout << "Sent ACK 4 " << endl;
   if((sent_bytes = sendto(sd,end, 1, 0,
 			  (struct sockaddr*)&sad, sizeof(sad)))<0){
     perror("sendto");

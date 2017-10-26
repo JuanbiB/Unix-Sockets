@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <poll.h>
 
 #include <iostream>
 #include <fstream>
@@ -24,6 +25,29 @@ char advance_seq_num (char seq_num) {
   if (seq_num == '0')
     return '1';
   return '0';
+}
+
+bool time_out(int sd) {
+  // Set up a pollfd structure
+  struct pollfd pollstr;
+  pollstr.fd = sd; // the file descriptor for the socket you are using
+  pollstr.events = POLLIN; // the events on the descriptor that you want to poll for
+  struct pollfd pollarr[1];
+  pollarr[0] = pollstr;
+
+  int n = poll(pollarr,1,100); // 1 = array size, 100 = timeout value in ms
+  // Received, read and go ahead
+  if(n > 0){
+    return false;
+  }
+  // Timeout!
+  else if(n == 0) {
+    return true;
+  }
+  else {
+    cout << "Other error\n"; exit(1);
+    exit(1);
+  }
 }
 
 int main(int argc, char**argv)
@@ -78,16 +102,36 @@ int main(int argc, char**argv)
 
     /* Inner loop.  Read and echo data received from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
-		    &fromlen);
-
-
-
+        &fromlen);
+        
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
 
+    /* Step 3  (mani) */
+    bool timed_out = time_out(sd);
+    while (timed_out) {
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
+      resp[0] = '2'; // 2 = ACK
+      resp[1] = sender_seq_num; // 1 or 0
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      cout << "fuuuck" << endl;
+      timed_out = time_out(sd);
+    }
+
     /* File transfer is done! Break out, handle termination. */
-    if (msg_type == '4') break; // 4 = FIN
+    if (msg_type == '4') {
+      cout << "FIN received." << endl;
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
+      resp[0] = '5'; // 5 = FINACK
+      resp[1] = sender_seq_num; // 1 or 0
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      break;
+    } 
 
     cout << "Sender seq num: " << sender_seq_num << endl;
     cout << "My seq num: " << my_seq_num << endl;

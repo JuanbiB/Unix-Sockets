@@ -148,10 +148,8 @@ int main(int argc, char**argv)
   char resp[1];
   memset(resp, 0, 1);
   resp[0] = '5'; // 5 = FINACK
-  cout << endl;
   int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
   if (sent < 0) cout << "ERROR\n";
-
   // wait for ACK from receiver, since receiver has acknowledged my FINACK.
   mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
   if (mlen < 0) {
@@ -165,4 +163,6 @@ int main(int argc, char**argv)
     cout << "...program terminated." << endl;
     exit(1);
   }
+  close(sd);
+  exit(0);
 }

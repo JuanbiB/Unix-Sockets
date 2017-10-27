@@ -50,15 +50,14 @@ bool time_out(int sd) {
   }
 }
 
-bool handle_response(char* recvline, char  sender_seq_num) {
+bool handle_response(char* recvline, char sender_seq_num) {
   char msg_type = recvline[0];
   char recv_seq_num = recvline[1];
-
+  cout << msg_type << endl;
   if (msg_type == '2' && recv_seq_num == sender_seq_num) {
     return true;
   }
   else if (msg_type == '5') {
-    cout << "FINACK bish" << endl;
     return true;
   }
   else if (msg_type == '2' && recv_seq_num != sender_seq_num) {

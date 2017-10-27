@@ -35,7 +35,7 @@ bool time_out(int sd) {
   struct pollfd pollarr[1];
   pollarr[0] = pollstr;
 
-  int n = poll(pollarr,1, TIMEOUT); // 1 = array size, 100 = timeout value in ms
+  int n = poll(pollarr, 1, TIMEOUT); // 1 = array size, 100 = timeout value in ms
   // Received, read and go ahead
   if(n > 0) {
     return false;
@@ -45,7 +45,7 @@ bool time_out(int sd) {
     return true;
   }
   else {
-    cout << "Other error\n"; exit(1);
+    cout << "Other error\n";
     exit(1);
   }
 }
@@ -55,7 +55,6 @@ bool handle_response(char* recvline, char  sender_seq_num) {
   char recv_seq_num = recvline[1];
 
   if (msg_type == '2' && recv_seq_num == sender_seq_num) {
-    cout << "ACK frame recv with correct seq num.\n";
     return true;
   }
   else if (msg_type == '5') {
@@ -71,9 +70,8 @@ bool handle_response(char* recvline, char  sender_seq_num) {
 void resend_message(int sd, char* payload, int len, struct sockaddr* sad,
 		    bool timed_out, char* recvline) {
   while (timed_out) {
-    cout << "Timeout! Resending last payload. With seq num: " << payload[1] << endl;
-    if((nsendto(sd,payload, len, 0,
-	       sad, sizeof(struct sockaddr)))<0){
+    if((nsendto(sd, payload, len, 0,
+	       sad, sizeof(struct sockaddr))) < 0) {
       perror("sendto");
       exit(1);
     }
@@ -82,15 +80,12 @@ void resend_message(int sd, char* payload, int len, struct sockaddr* sad,
   socklen_t size = sizeof(struct sockaddr_in);
 
   memset(recvline, 0, len);
-  if((recvfrom(sd,recvline, 2, 0,
-	       sad, &size))<0){
+  if((recvfrom(sd, recvline, 2, 0,
+	       sad, &size)) < 0) {
     perror("recvfrom");
     exit(1);
   }
-  cout << "Received frame from receiver\n";
-  cout << "Contents: " << recvline << endl; 
 }
-
 
 int main(int argc, char* argv[]) {
   char* host_name; // Host to send file to. 
@@ -98,8 +93,6 @@ int main(int argc, char* argv[]) {
   char* file_name; // File to send.
   double drop_p; // Probablilty of dropping package.
   int byte_err_p; // Probability of there being a byte error.
-  
-  cout << argc;
 
   if (argc > 5) {
     host_name = argv[1];
@@ -114,7 +107,6 @@ int main(int argc, char* argv[]) {
   }
 
   ninit(drop_p, byte_err_p);
-  
   // 1) Create socket with hostname and post.
   // 2) Bind to it.
   // 3) Start reading file and sending it over.
@@ -122,7 +114,7 @@ int main(int argc, char* argv[]) {
   struct  sockaddr_in sad; /* structure to hold an IP address     */
   struct  sockaddr_in cad; /* structure to hold an IP address     */
   int     sd;              /* socket descriptor                   */
-  socklen_t     fromlen = sizeof(sad);
+  socklen_t fromlen = sizeof(sad);
   int     nbytes;          /* number of bytes in reply message    */
   char payload[MAXLINE]; /* send buffer                       */
   char recvline[MAXLINE]; /* receive buffer                    */
@@ -130,8 +122,7 @@ int main(int argc, char* argv[]) {
   /*  Set up address for echo server  */
   memset((char *)&sad,0,sizeof(sad)); /* clear sockaddr structure */
   sad.sin_family = AF_INET;         /* set family to Internet     */
-  sad.sin_port = htons((u_short)port_number); /* convert port number to 
-						network byte order */
+  sad.sin_port = htons((u_short)port_number); /* convert port number to network byte order */
 
   /*  Set up address for local socket  */
   memset((char *)&cad,0,sizeof(sad)); /* clear sockaddr structure */
@@ -143,7 +134,7 @@ int main(int argc, char* argv[]) {
   string host(host_name);
 
   /* Convert host name to equivalent IP address and copy to sad. */
-  if((ptrh=gethostbyname(host.c_str()))==0){
+  if((ptrh=gethostbyname(host.c_str())) ==0 ) {
     fprintf(stderr,"invalid host: %s\n", host.c_str());
     exit(1);
   }
@@ -157,25 +148,20 @@ int main(int argc, char* argv[]) {
   }
 
   /* Bind the socket to any local address */
-  if(bind(sd, (struct sockaddr *)&cad, sizeof(cad))<0){
+  if(bind(sd, (struct sockaddr *)&cad, sizeof(cad)) < 0) {
     perror("bind");
     exit(1);
   }
 
-  if((ptrh = gethostbyaddr((char*)&cad.sin_addr,
-			   sizeof(struct sockaddr_in),AF_INET))==0){
-    printf("%s port %d\n",
-	   inet_ntoa(cad.sin_addr),ntohs(cad.sin_port));
+  if((ptrh = gethostbyaddr((char*)&cad.sin_addr, sizeof(struct sockaddr_in),AF_INET))==0) {
+    printf("%s port %d\n", inet_ntoa(cad.sin_addr),ntohs(cad.sin_port));
   }
   else {
-    printf("%s/%s port %d\n",
-	  ptrh->h_name,inet_ntoa(cad.sin_addr),ntohs(cad.sin_port));
+    printf("%s/%s port %d\n", ptrh->h_name,inet_ntoa(cad.sin_addr),ntohs(cad.sin_port));
   }
 
   /* Main loop.  Repeatedly get data from stdin, write it to
      the socket, then read data from socket and write it to stdout */
-  //  while (fgets(sendline,MAXLINE,stdin) != NULL) {
-  
   // Open file and find it's size. 
   FILE* f_send = fopen(file_name, "r");
   if (!f_send) {
@@ -188,11 +174,7 @@ int main(int argc, char* argv[]) {
   char sender_seq_num = '0';
   
   while (read_so_far < file_size) {
-    cout << endl;
-    cout << "<--------------->" << endl;
-
     memset(payload, 0, MAXLINE);
-    
     payload[0] = '1'; // DATA
     payload[1] = sender_seq_num; // 1 or 0.
     
@@ -201,9 +183,7 @@ int main(int argc, char* argv[]) {
     memset(temp, 0, MAXLINE-4);
     int read = fread(temp, 1, MAXLINE-4, f_send);
     read_so_far += read;
-    cout << "Read: "<<read_so_far <<endl;
-
-    // // Copy DATA into payload
+    // Copy DATA into payload
     for (int i = 2, j = 0; j <= read; i++, j++) {
       payload[i] = temp[j];
     }
@@ -211,41 +191,32 @@ int main(int argc, char* argv[]) {
     payload[2+read] = 'C';
     payload[2+read+1] = 'R';
 
-
     /*  Send a message to the server  */
     int sent_bytes = 0;
-    if((sent_bytes = nsendto(sd, payload, read+4, 0,
-			    (struct sockaddr*)&sad, sizeof(sad)))<0){
+    if((sent_bytes = nsendto(sd, payload, read+4, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
       perror("sendto");
       exit(1);
     }
-    cout << "Sent: " << sent_bytes << " bytes.\n";
 
     bool timed_out = time_out(sd);
     /* Message received in timely fashion. */    
     if (!timed_out) {
-      if((nbytes=recvfrom(sd,recvline,strlen(payload),0,
-			  (struct sockaddr*)&sad, &fromlen))<0){
+      if((nbytes=recvfrom(sd, recvline, strlen(payload), 0, (struct sockaddr*)&sad, &fromlen)) < 0) {
 	      perror("recvfrom");
 	      exit(1);
       }
       /* Keep resending package until we get right seq num. */
-      while (!handle_response(recvline, sender_seq_num)){
-	cout << "RESENDING CUZ SEQ NUM WRONG  seq num was wrong" << endl;
-	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
-		       recvline);
+      while (!handle_response(recvline, sender_seq_num)) {
+	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
       }
     }
     /* We have a time out! */
     else {
       /* Keep resending until we get something. */
-      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
-		     recvline);
-      // /* Keep resending until we get right seq num.  */
+      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
+      /* Keep resending until we get right seq num.  */
       while (!handle_response(recvline, sender_seq_num)) {
-	cout << "AFTER TIMEOUT SEQ NUM WAS WRONG" << endl;
-	  resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true,
-      		     recvline);
+	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
       }
     }
     /* Advance seq number after getting a package with correct seq num. */
@@ -256,23 +227,27 @@ int main(int argc, char* argv[]) {
   int sent_bytes;
   char end[MAXLINE];
   memset(end, 0, MAXLINE);
-  end[0] = '4';
-  cout << endl;
-  cout << "Sent FIN " << endl;
-  if((sent_bytes = sendto(sd,end, 2, 0,
-			  (struct sockaddr*)&sad, sizeof(sad)))<0){
+  end[0] = '4'; //SENDING FIN
+  if((sent_bytes = sendto(sd, end, 2, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
     perror("sendto");
     exit(1);
   }
   socklen_t size = sizeof(struct sockaddr);
   int rec;
-
-  if((rec = recvfrom(sd, recvline, MAXLINE, 0,
-	       (struct sockaddr*)&sad, &size))<0){
+  if((rec = recvfrom(sd, recvline, MAXLINE, 0, (struct sockaddr*)&sad, &size)) < 0) {
     perror("recvfrom");
     exit(1);
   }
-  handle_response(recvline, sender_seq_num);
+  if (handle_response(recvline, sender_seq_num)) {
+    int sent_bytes;
+    char end[MAXLINE];
+    memset(end, 0, MAXLINE);
+    end[0] = '2'; //SENDING FIN
+    if((sent_bytes = sendto(sd, end, 2, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+      perror("sendto");
+      exit(1);
+    }
+  }
   cout << "File size: " << file_size << endl;  
   /* Close the socket. */
   fclose(f_send);

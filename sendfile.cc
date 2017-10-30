@@ -50,19 +50,18 @@ bool time_out(int sd) {
   }
 }
 
+/* Makes sure that the message is either an ACK with
+   correct sequence number or a FINACK. */
 bool handle_response(char* recvline, char sender_seq_num) {
   char msg_type = recvline[0];
   char recv_seq_num = recvline[1];
-  cout << msg_type << endl;
-  if (msg_type == '2' && recv_seq_num == sender_seq_num) {
+
+  if ((msg_type == '2' && recv_seq_num == sender_seq_num)
+      || msg_type == '5') {
     return true;
   }
-  else if (msg_type == '5') {
-    return true;
-  }
-  else if (msg_type == '2' && recv_seq_num != sender_seq_num) {
-    cout << "ACK frame recv with incorrect seq number.\nShould send again.\n";
-  }
+
+  cout << "ACK frame recv with incorrect seq number.\nShould send again.\n";
   return false;
 }
 
@@ -161,7 +160,6 @@ int main(int argc, char* argv[]) {
 
   /* Main loop.  Repeatedly get data from stdin, write it to
      the socket, then read data from socket and write it to stdout */
-  // Open file and find it's size. 
   FILE* f_send = fopen(file_name, "r");
   if (!f_send) {
     cout << "Couldn't open file" << endl;
@@ -178,21 +176,22 @@ int main(int argc, char* argv[]) {
     payload[1] = sender_seq_num; // 1 or 0.
     
     char temp[MAXLINE-4];
-    // Leave room for code, seq_num and CRC. 
     memset(temp, 0, MAXLINE-4);
     int read = fread(temp, 1, MAXLINE-4, f_send);
     read_so_far += read;
-    // Copy DATA into payload
+
+    /* Copy DATA into payload. */
     for (int i = 2, j = 0; j <= read; i++, j++) {
       payload[i] = temp[j];
     }
-    // Dummies to hold future CRC code.
+    /* CRC code. */
     payload[2+read] = 'C';
     payload[2+read+1] = 'R';
 
-    /*  Send a message to the server  */
+    /* Send a message to the server. */
     int sent_bytes = 0;
-    if((sent_bytes = nsendto(sd, payload, read+4, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+    if((sent_bytes = nsendto(sd, payload, read+4, 0,
+			     (struct sockaddr*)&sad, sizeof(sad))) < 0) {
       perror("sendto");
       exit(1);
     }
@@ -200,40 +199,48 @@ int main(int argc, char* argv[]) {
     bool timed_out = time_out(sd);
     /* Message received in timely fashion. */    
     if (!timed_out) {
-      if((nbytes=recvfrom(sd, recvline, strlen(payload), 0, (struct sockaddr*)&sad, &fromlen)) < 0) {
+      if((nbytes=recvfrom(sd, recvline, strlen(payload), 0,
+			  (struct sockaddr*)&sad, &fromlen)) < 0) {
 	      perror("recvfrom");
 	      exit(1);
       }
       /* Keep resending package until we get right seq num. */
       while (!handle_response(recvline, sender_seq_num)) {
-	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
+	      resend_message(sd, payload, read+4,
+			     (struct sockaddr*)&sad, true, recvline);
       }
     }
     /* We have a time out! */
     else {
       /* Keep resending until we get something. */
-      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
+      resend_message(sd, payload, read+4,
+		     (struct sockaddr*)&sad, true, recvline);
       /* Keep resending until we get right seq num.  */
       while (!handle_response(recvline, sender_seq_num)) {
-	      resend_message(sd, payload, read+4, (struct sockaddr*)&sad, true, recvline);
+	      resend_message(sd, payload, read+4,
+			     (struct sockaddr*)&sad, true, recvline);
       }
     }
     /* Advance seq number after getting a package with correct seq num. */
     if (sender_seq_num == '1') { sender_seq_num = '0'; }
     else {sender_seq_num = '1';}
   }
-  // Handle termination of file transfer. 
+  /* Handle termination of file transfer. */
   int sent_bytes;
   char end[MAXLINE];
   memset(end, 0, MAXLINE);
-  end[0] = '4'; //SENDING FIN
-  if((sent_bytes = sendto(sd, end, 2, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+  end[0] = '4';
+  /* Send FIN.  */
+  if((sent_bytes = sendto(sd, end, 2, 0,
+			  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
     perror("sendto");
     exit(1);
   }
   socklen_t size = sizeof(struct sockaddr);
   int rec;
-  if((rec = recvfrom(sd, recvline, MAXLINE, 0, (struct sockaddr*)&sad, &size)) < 0) {
+  /* Receive FINACK.  */
+  if((rec = recvfrom(sd, recvline, MAXLINE, 0,
+		     (struct sockaddr*)&sad, &size)) < 0) {
     perror("recvfrom");
     exit(1);
   }
@@ -241,8 +248,10 @@ int main(int argc, char* argv[]) {
     int sent_bytes;
     char end[MAXLINE];
     memset(end, 0, MAXLINE);
-    end[0] = '2'; //SENDING FIN
-    if((sent_bytes = sendto(sd, end, 2, 0, (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+    /* Send ACK.  */
+    end[0] = '2'; 
+    if((sent_bytes = sendto(sd, end, 2, 0,
+			    (struct sockaddr*)&sad, sizeof(sad))) < 0) {
       perror("sendto");
       exit(1);
     }

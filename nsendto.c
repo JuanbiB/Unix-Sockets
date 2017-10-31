@@ -7,6 +7,8 @@ static double byteProbability=0.0;
 static int initialized = 0;
 static int cleanused = 0;
 
+using namespace std;
+
 void ninit(double dropP, double byteP){
   dropProbability = dropP;
   byteProbability = byteP;

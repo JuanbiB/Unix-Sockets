@@ -46,8 +46,9 @@ int main(int argc, char**argv)
   if (argc > 4) {
     port_number = atoi(argv[1]);
     file_name = argv[2];
-    drop_p = atoi(argv[3]);
-    byte_err_p = atoi(argv[4]);
+    char* ptr;
+    drop_p = strtod(argv[3], &ptr);
+    byte_err_p = strtod(argv[4], &ptr);
   }
   else {
     cout << "Not enough arguments.\n";
@@ -114,8 +115,12 @@ int main(int argc, char**argv)
     
     int new_len = mlen -2;
     uint16_t crc_generated = getCRC2(check_buf, new_len);
+    /* This means we got a payload with errors in it, so we want
+       to ask for it again, so we just continue so they timeout
+       and resend payload.. */
     if (crc_generated != 0) {
       cout << "We have a bit error!\n";
+      continue;
     }
 
     /* File transfer is done! Break out, handle termination. */

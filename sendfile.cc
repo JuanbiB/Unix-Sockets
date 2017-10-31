@@ -91,20 +91,24 @@ int main(int argc, char* argv[]) {
   int port_number; // Port number of host.
   char* file_name; // File to send.
   double drop_p; // Probablilty of dropping package.
-  int byte_err_p; // Probability of there being a byte error.
+  double byte_err_p; // Probability of there being a byte error.
 
   if (argc > 5) {
     host_name = argv[1];
     port_number = atoi(argv[2]);
     file_name = argv[3];
-    drop_p = atoi(argv[4]);
-    byte_err_p = atoi(argv[5]);
+    char* ptr;
+    drop_p = strtod(argv[4], &ptr);
+    byte_err_p = strtod(argv[5], &ptr);
+    
   }
   else {
     cout << "Not enough arguments.\n";
     exit(1);
   }
 
+  cout << byte_err_p << endl;
+  cout << drop_p << endl;
   ninit(drop_p, byte_err_p);
   // 1) Create socket with hostname and post.
   // 2) Bind to it.

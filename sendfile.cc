@@ -175,7 +175,8 @@ int main(int argc, char* argv[]) {
     memset(payload, 0, MAXLINE);
     payload[0] = '1'; // DATA
     payload[1] = sender_seq_num; // 1 or 0.
-    
+
+    /* Reading in data from file. */
     char temp[MAXLINE-4];
     memset(temp, 0, MAXLINE-4);
     int read = fread(temp, 1, MAXLINE-4, f_send);
@@ -185,13 +186,13 @@ int main(int argc, char* argv[]) {
     for (int i = 2, j = 0; j < read; i++, j++) {
       payload[i] = temp[j];
     }
-    uint16_t crc = getCRC2(temp, read);
 
+    /* Calculating CRC-16 code! */
+    uint16_t crc = getCRC2(temp, read);
     printf("CRC: 0x%x\n", crc);
     uint8_t left = crc  >> 8;
     uint8_t right = crc & 0xFF;
-    //    cout << "left " << (int)left << " right: " << (int)right << endl;
-    /* CRC code. */
+
     payload[2+read] = left;
     payload[2+read+1] = right;
 

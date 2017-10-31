@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "nsendto.c"
+#include "crc_generator.cc"
 
 #define MAXBUFFER        40
 #define MAXLINE          40
@@ -181,12 +182,18 @@ int main(int argc, char* argv[]) {
     read_so_far += read;
 
     /* Copy DATA into payload. */
-    for (int i = 2, j = 0; j <= read; i++, j++) {
+    for (int i = 2, j = 0; j < read; i++, j++) {
       payload[i] = temp[j];
     }
+    uint16_t crc = getCRC2(temp, read);
+
+    printf("CRC: 0x%x\n", crc);
+    uint8_t left = crc  >> 8;
+    uint8_t right = crc & 0xFF;
+    //    cout << "left " << (int)left << " right: " << (int)right << endl;
     /* CRC code. */
-    payload[2+read] = 'C';
-    payload[2+read+1] = 'R';
+    payload[2+read] = left;
+    payload[2+read+1] = right;
 
     /* Send a message to the server. */
     int sent_bytes = 0;

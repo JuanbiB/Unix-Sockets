@@ -15,6 +15,7 @@
 #include <errno.h>
 
 #include "nsendto.c"
+#include "crc_generator.cc"
 
 #define BSIZE           40              /* size of data buffer */
 
@@ -100,8 +101,22 @@ int main(int argc, char**argv)
       exit(1);
     }
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
+    uint8_t crc1 = buf[mlen-2];
+    uint8_t crc2 = buf[mlen-1];
+    
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
+
+    char check_buf[mlen-2];
+    for (int i = 0, j = 2; j < mlen; i++, j++){
+      check_buf[i] = buf[j];
+    }
+    
+    int new_len = mlen -2;
+    uint16_t crc_generated = getCRC2(check_buf, new_len);
+    if (crc_generated != 0) {
+      cout << "We have a bit error!\n";
+    }
 
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {

@@ -93,28 +93,26 @@ int main(int argc, char**argv)
     /* Inner loop.  Read and echo data received from client. */
 
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
-    
-    /* Once there's something to receive, we receive it. */
-    // mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
-    //     &fromlen);
     if (mlen < 0) {
       perror("recvfrom");
       exit(1);
     }
-    /* CRC code in buf[mlen-2] and buf[mlen-1]! */
-    uint8_t crc1 = buf[mlen-2];
-    uint8_t crc2 = buf[mlen-1];
-    
+
     char msg_type = buf[0];
     char sender_seq_num = buf[1];
 
-    char check_buf[mlen-2];
-    for (int i = 0, j = 2; j < mlen; i++, j++){
-      check_buf[i] = buf[j];
+    /* File transfer is done! Break out, handle termination. */
+    if (msg_type == '4') {
+      break;
     }
+
+    /* CRC code in buf[mlen-2] and buf[mlen-1]! */
+    uint8_t crc1 = buf[mlen-2];
+    uint8_t crc2 = buf[mlen-1];
+
+    uint16_t crc_generated = getCRC2(buf, mlen);
+    printf("CRC generated: 0x%x\n", crc_generated);
     
-    int new_len = mlen -2;
-    uint16_t crc_generated = getCRC2(check_buf, new_len);
     /* This means we got a payload with errors in it, so we want
        to ask for it again, so we just continue so they timeout
        and resend payload.. */
@@ -123,10 +121,6 @@ int main(int argc, char**argv)
       continue;
     }
 
-    /* File transfer is done! Break out, handle termination. */
-    if (msg_type == '4') {
-      break;
-    }
     /* This basically means sender didn't get my last ACK. 
        So I resend it and don't write payload to file (would be a 
        a duplicate). */

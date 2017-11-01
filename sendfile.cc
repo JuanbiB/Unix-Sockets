@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
     }
 
     /* Calculating CRC-16 code! */
-    uint16_t crc = getCRC2(temp, read);
+    uint16_t crc = getCRC2(payload, read+2);
     printf("CRC: 0x%x\n", crc);
     uint8_t left = crc  >> 8;
     uint8_t right = crc & 0xFF;

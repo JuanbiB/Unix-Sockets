@@ -99,7 +99,8 @@ int main(int argc, char**argv)
     }
 
     char msg_type = buf[0];
-    char sender_seq_num = buf[1];
+    int sender_seq_num = buf[1];
+    cout << "Received seq num: " << (sender_seq_num % 7) << endl;
 
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
@@ -111,7 +112,6 @@ int main(int argc, char**argv)
     uint8_t crc2 = buf[mlen-1];
 
     uint16_t crc_generated = getCRC2(buf, mlen);
-    printf("CRC generated: 0x%x\n", crc_generated);
     
     /* This means we got a payload with errors in it, so we want
        to ask for it again, so we just continue so they timeout
@@ -121,26 +121,13 @@ int main(int argc, char**argv)
       continue;
     }
 
-    /* This basically means sender didn't get my last ACK. 
-       So I resend it and don't write payload to file (would be a 
-       a duplicate). */
-    if (my_seq_num != sender_seq_num) {
-      /* You should modularize this since it's repeated code from below.*/
-      char resp[2];
-      memset(resp, 0, 2);
-      resp[0] = '2'; // 2 = ACK
-      resp[1] = sender_seq_num;
-      int sent = nsendto(sd, resp, 2, 0, (struct sockaddr *)&cad, fromlen);
-      if (sent < 0) cout << "ERROR\n";
-      continue;
-    }
     /* Extracting payload data. */
     char payload_data[BSIZE];
     memset(payload_data, 0, BSIZE);
     for (int i = 2, j = 0; i < mlen-2; i++, j++) {
       payload_data[j] = buf[i]; 
     }
-    memset(buf, 0, sizeof(buf));
+
 
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen-4, f_recv);
@@ -151,10 +138,10 @@ int main(int argc, char**argv)
     char resp[BSIZE];
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
-    resp[1] = sender_seq_num; // 1 or 0
+    resp[1] = sender_seq_num;// + 1 
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
-    my_seq_num = advance_seq_num(my_seq_num);
+    memset(buf, 0, sizeof(buf));
   }
 
   // Handle termination!

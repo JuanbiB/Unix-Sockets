@@ -20,6 +20,7 @@
 #define MAXBUFFER        40
 #define MAXLINE          40
 #define TIMEOUT          100
+#define FRAME_NUM        7
 using namespace std;
 
 int find_file_size (FILE* ptr) {
@@ -120,8 +121,10 @@ int main(int argc, char* argv[]) {
   int     sd;              /* socket descriptor                   */
   socklen_t fromlen = sizeof(sad);
   int     nbytes;          /* number of bytes in reply message    */
-  char payload[MAXLINE]; /* send buffer                       */
+
   char recvline[MAXLINE]; /* receive buffer                    */
+
+  char frames[FRAME_NUM][MAXLINE];
 
   /*  Set up address for echo server  */
   memset((char *)&sad,0,sizeof(sad)); /* clear sockaddr structure */
@@ -173,71 +176,80 @@ int main(int argc, char* argv[]) {
   }
   int file_size = find_file_size(f_send);
   int read_so_far = 0;
-
-  char sender_seq_num = '0';
+  
+  int sender_seq_num = 0;
+  int seq_base = 0;
+  int seq_max = 7;
   
   while (read_so_far < file_size) {
-    memset(payload, 0, MAXLINE);
-    payload[0] = '1'; // DATA
-    payload[1] = sender_seq_num; // 1 or 0.
+    for (int i = seq_base; i < seq_max; i++){
+      char payload[MAXLINE]; /* send buffer    */
+      memset(payload, 0, MAXLINE);
+      payload[0] = '1'; // DATA
+      payload[1] = sender_seq_num;
 
-    /* Reading in data from file. */
-    char temp[MAXLINE-4];
-    memset(temp, 0, MAXLINE-4);
-    int read = fread(temp, 1, MAXLINE-4, f_send);
-    read_so_far += read;
+      int sqq = sender_seq_num % FRAME_NUM;
+      cout << "Sending frame number: " << sqq << endl;
+      sender_seq_num++;
+      
+      
+      /* Reading in data from file. */
+      char temp[MAXLINE-4];
+      memset(temp, 0, MAXLINE-4);
+      int read = fread(temp, 1, MAXLINE-4, f_send);
+      read_so_far += read;
 
-    /* Copy DATA into payload. */
-    for (int i = 2, j = 0; j < read; i++, j++) {
-      payload[i] = temp[j];
-    }
+      /* Copy DATA into payload. */
+      for (int i = 2, j = 0; j < read; i++, j++) {
+	payload[i] = temp[j];
+      }
 
-    /* Calculating CRC-16 code! */
-    uint16_t crc = getCRC2(payload, read+2);
-    printf("CRC: 0x%x\n", crc);
-    uint8_t left = crc  >> 8;
-    uint8_t right = crc & 0xFF;
+      /* Calculating CRC-16 code! */
+      uint16_t crc = getCRC2(payload, read+2);
+      //printf("CRC: 0x%x\n", crc);
+      uint8_t left = crc  >> 8;
+      uint8_t right = crc & 0xFF;
 
-    payload[2+read] = left;
-    payload[2+read+1] = right;
+      payload[2+read] = left;
+      payload[2+read+1] = right;
 
-    /* Send a message to the server. */
-    int sent_bytes = 0;
-    if((sent_bytes = nsendto(sd, payload, read+4, 0,
-			     (struct sockaddr*)&sad, sizeof(sad))) < 0) {
-      perror("sendto");
-      exit(1);
+      memset(frames[i], 0, MAXLINE);
+      //frames[i] = payload;
+
+      /* Send a message to the server. */
+      int sent_bytes = 0;
+      if((sent_bytes = nsendto(sd, payload, read+4, 0,
+			       (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+	perror("sendto");
+	exit(1);
+      }
     }
 
     bool timed_out = time_out(sd);
+    bool complete = false;
+    int received = 0;
     /* Message received in timely fashion. */    
-    if (!timed_out) {
-      if((nbytes=recvfrom(sd, recvline, strlen(payload), 0,
+    while (!timed_out) {
+      if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
 			  (struct sockaddr*)&sad, &fromlen)) < 0) {
 	      perror("recvfrom");
 	      exit(1);
       }
-      /* Keep resending package until we get right seq num. */
-      while (!handle_response(recvline, sender_seq_num)) {
-	      resend_message(sd, payload, read+4,
-			     (struct sockaddr*)&sad, true, recvline);
+      int ssq = recvline[1] % FRAME_NUM;
+      cout << "Seq num received: " << ssq << endl;
+      received++;
+      
+      if (received == 7){
+	complete = true;
+	break;
       }
+      timed_out = time_out(sd);
     }
-    /* We have a time out! */
-    else {
-      /* Keep resending until we get something. */
-      resend_message(sd, payload, read+4,
-		     (struct sockaddr*)&sad, true, recvline);
-      /* Keep resending until we get right seq num.  */
-      while (!handle_response(recvline, sender_seq_num)) {
-	      resend_message(sd, payload, read+4,
-			     (struct sockaddr*)&sad, true, recvline);
-      }
+    if (!complete) {
+      cout << "We have a time out!\n";
     }
-    /* Advance seq number after getting a package with correct seq num. */
-    if (sender_seq_num == '1') { sender_seq_num = '0'; }
-    else {sender_seq_num = '1';}
   }
+  
   /* Handle termination of file transfer. */
   int sent_bytes;
   char end[MAXLINE];

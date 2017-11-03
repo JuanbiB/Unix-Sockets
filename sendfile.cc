@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "nsendto.c"
+#include "types.cc"
 #include "crc_generator.cc"
 
 #define MAXBUFFER        40

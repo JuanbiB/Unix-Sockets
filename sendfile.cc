@@ -182,6 +182,7 @@ int main(int argc, char* argv[]) {
   int seq_max = 7;
   
   while (read_so_far < file_size) {
+    /* Initial send to get us started. */
     for (int i = seq_base; i < seq_max; i++){
       char payload[MAXLINE]; /* send buffer    */
       memset(payload, 0, MAXLINE);
@@ -201,7 +202,7 @@ int main(int argc, char* argv[]) {
 
       /* Copy DATA into payload. */
       for (int i = 2, j = 0; j < read; i++, j++) {
-	payload[i] = temp[j];
+	        payload[i] = temp[j];
       }
 
       /* Calculating CRC-16 code! */
@@ -213,7 +214,7 @@ int main(int argc, char* argv[]) {
       payload[2+read] = left;
       payload[2+read+1] = right;
 
-      memset(frames[i], 0, MAXLINE);
+      //      memset(frames[i], 0, MAXLINE);
       //frames[i] = payload;
 
       /* Send a message to the server. */
@@ -225,28 +226,27 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    bool timed_out = time_out(sd);
-    bool complete = false;
-    int received = 0;
-    /* Message received in timely fashion. */    
-    while (!timed_out) {
-      if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
-			  (struct sockaddr*)&sad, &fromlen)) < 0) {
-	      perror("recvfrom");
-	      exit(1);
+    while (true) {
+      bool timed_out = time_out(sd);
+      if (!timed_out) {
+	if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
+			    (struct sockaddr*)&sad, &fromlen)) < 0) {
+	  perror("recvfrom");
+	  exit(1);
+	}
+	int ssq = recvline[1] % FRAME_NUM;
+	/* Out of sync. */
+	if (ssq != seq_base) {
+	}
+	else {
+	  // now seq_base +
+	  seq_base = (seq_base+1)%FRAME_NUM;
+	  cout << "New base: " << seq_base << endl;
+	  /* send next payload in window */
+	  
+	}
+	       
       }
-      int ssq = recvline[1] % FRAME_NUM;
-      cout << "Seq num received: " << ssq << endl;
-      received++;
-      
-      if (received == 7){
-	complete = true;
-	break;
-      }
-      timed_out = time_out(sd);
-    }
-    if (!complete) {
-      cout << "We have a time out!\n";
     }
   }
   

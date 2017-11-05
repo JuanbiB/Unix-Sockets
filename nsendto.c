@@ -29,6 +29,7 @@ ssize_t nsendto(int sd, void*msg, ssize_t len, int flags,
 	gmsg[i] = ((char*)msg)[i];
 	x = drand48();
 	if(x<byteProbability){
+	  cout << "PLANTING BIT ERROR!\n";
 	  gmsg[i] ^= ((i*57) % 256);
 	}
       }

@@ -86,12 +86,11 @@ int main(int argc, char**argv)
 
   /* Main server loop - receive and handle requests */
   FILE* f_recv = fopen(file_name, "wb");
-  char my_seq_num = '0';
+  int my_seq_num = 0;
   int total = 0;
   
   while (true) {
-    /* Inner loop.  Read and echo data received from client. */
-
+    /* Continue received data from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
     if (mlen < 0) {
       perror("recvfrom");
@@ -99,25 +98,34 @@ int main(int argc, char**argv)
     }
 
     char msg_type = buf[0];
-    int sender_seq_num = buf[1];
-    cout << "Received seq num: " << (sender_seq_num % 7) << endl;
-
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
+      cout << "FIN RECEIVED\n";
       break;
     }
 
+    int sender_seq_num = (buf[1] - '0') % 7;
+    cout << "--------------------" << endl;
+    cout << "Received seq num: " << sender_seq_num << endl;
+    cout << "expected  seq num " << my_seq_num << endl;
+    
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     uint8_t crc1 = buf[mlen-2];
     uint8_t crc2 = buf[mlen-1];
 
     uint16_t crc_generated = getCRC2(buf, mlen);
     
-    /* This means we got a payload with errors in it, so we want
-       to ask for it again, so we just continue so they timeout
-       and resend payload.. */
-    if (crc_generated != 0) {
-      cout << "We have a bit error!\n";
+    /* If we get a payload with data error or a wrong sequence number, 
+       we resend with the seq number of the expected packet. */
+    if ((my_seq_num != sender_seq_num) || (crc_generated != 0)) {
+      cout << "why\n";
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
+      resp[0] = '2'; // 2 = ACK
+      resp[1] = my_seq_num + '0'; // expected seq num. 
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      memset(buf, 0, sizeof(buf));
       continue;
     }
 
@@ -128,7 +136,6 @@ int main(int argc, char**argv)
       payload_data[j] = buf[i]; 
     }
 
-
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen-4, f_recv);
     total += w;
@@ -138,7 +145,13 @@ int main(int argc, char**argv)
     char resp[BSIZE];
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
-    resp[1] = sender_seq_num;// + 1 
+
+    /* Update my expected sequence number. */
+    cout << "Increasing..\n";
+    my_seq_num = (my_seq_num+1) % 7;
+    resp[1] = my_seq_num + '0';
+
+    resp[2] = w + '0';
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
     memset(buf, 0, sizeof(buf));

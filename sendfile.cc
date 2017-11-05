@@ -257,6 +257,9 @@ int main(int argc, char* argv[]) {
     int last_requested = 0;
     while (true) {
       bool timed_out = time_out(sd);
+      cout << endl;
+      cout << "Seq base: " << seq_base << endl;
+      
       if (!timed_out) {
 	/* Receive packet. */
 	if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
@@ -283,13 +286,13 @@ int main(int argc, char* argv[]) {
 	      exit(1);
 	    }
 
-	    if (seq_max > 0){
-	      copy_buffer(payload, read+4, frames[seq_max-1]);
+	    if (seq_base > 0){
+	      copy_buffer(payload, read+4, frames[seq_base-1]);
 	    } else {
 	      copy_buffer(payload, read+4, frames[6]);
 	    }
 
-	    /* Slide window to the right. Wraps around. */
+	    /* Slide window to the right. Wraps around. Don't even know if I need this. */
 	    seq_max = (seq_max + 1) % 7;
 
 	  } else {
@@ -300,6 +303,7 @@ int main(int argc, char* argv[]) {
 	}
 	/* When an unexpected ACK is received, it can be ignored or used as a trigger to resend.*/
 	else {
+	  /* Have to clear buffer? */
 	  cout << "Ignoring sequence num: " << received_seq << endl;
 	  cout << "My base is: " << seq_base << endl;
 	}
@@ -308,14 +312,17 @@ int main(int argc, char* argv[]) {
       else {
 	/* All 'unacknowledged' frames. How much do I get from the buffer and how much do I read in? */	
 	cout << "Timeout.. Resending. \n";
-	/* This is all wrong! */
+	/* This is all wrong! Right now it's just sending the last unacknowledged frame, but I have to 
+	   send that + the window size? */
 	int sent_bytes = 0;
 	cout << "last requested: " << last_requested << endl;
-	if((sent_bytes = nsendto(sd, frames[last_requested], find_size(frames[last_requested]), 0,
+	cout << "resending: " << frames[last_requested] << endl;
+
+	// try with sendto
+	if((sent_bytes = nsendto(sd, frames[last_requested], MAXLINE, 0,
 				(struct sockaddr*)&sad, sizeof(sad))) < 0) {
 	  perror("sendto");
 	  exit(1);
-
 	}
       }
     }

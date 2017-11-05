@@ -104,7 +104,7 @@ int main(int argc, char**argv)
       break;
     }
 
-    int sender_seq_num = (buf[1] - '0') % 7;
+    int sender_seq_num = (buf[1] - '0');
     cout << "--------------------" << endl;
     cout << "Received seq num: " << sender_seq_num << endl;
     cout << "expected  seq num " << my_seq_num << endl;
@@ -118,12 +118,12 @@ int main(int argc, char**argv)
     /* If we get a payload with data error or a wrong sequence number, 
        we resend with the seq number of the expected packet. */
     if ((my_seq_num != sender_seq_num) || (crc_generated != 0)) {
-      cout << "why\n";
+      cout << "Rejected packet. \n";
       char resp[BSIZE];
       memset(resp, 0, BSIZE);
       resp[0] = '2'; // 2 = ACK
       resp[1] = my_seq_num + '0'; // expected seq num. 
-      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
       if (sent < 0) cout << "ERROR\n";
       memset(buf, 0, sizeof(buf));
       continue;

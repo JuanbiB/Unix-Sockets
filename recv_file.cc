@@ -88,7 +88,12 @@ int main(int argc, char**argv)
   FILE* f_recv = fopen(file_name, "wb");
   int my_seq_num = 0;
   int total = 0;
-  
+
+  int failed_datagrams = 0;
+  int acks_sent = 0;
+  int ack_resends = 0;
+  int time_outs = 0;
+    
   while (true) {
     /* Continue received data from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
@@ -98,34 +103,45 @@ int main(int argc, char**argv)
     }
 
     char msg_type = buf[0];
+    int sender_seq_num = (buf[1] - '0');
+    cout << "--------------------" << endl;
+    cout << "Received seq num: " << sender_seq_num << endl;
+    cout << "expected  seq num " << my_seq_num << endl;
+
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
       cout << "FIN RECEIVED\n";
       break;
     }
-
-    int sender_seq_num = (buf[1] - '0');
-    cout << "--------------------" << endl;
-    cout << "Received seq num: " << sender_seq_num << endl;
-    cout << "expected  seq num " << my_seq_num << endl;
     
     /* CRC code in buf[mlen-2] and buf[mlen-1]! */
     uint8_t crc1 = buf[mlen-2];
     uint8_t crc2 = buf[mlen-1];
 
     uint16_t crc_generated = getCRC2(buf, mlen);
-    
+
     /* If we get a payload with data error or a wrong sequence number, 
-       we resend with the seq number of the expected packet. */
+       we ignore it... The sender will time out and resend window. */
     if ((my_seq_num != sender_seq_num) || (crc_generated != 0)) {
+      if (crc_generated != 0) failed_datagrams++;
+      
       cout << "Rejected packet. \n";
-      char resp[BSIZE];
-      memset(resp, 0, BSIZE);
-      resp[0] = '2'; // 2 = ACK
-      resp[1] = my_seq_num + '0'; // expected seq num. 
-      int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
-      if (sent < 0) cout << "ERROR\n";
-      memset(buf, 0, sizeof(buf));
+      if ((my_seq_num != sender_seq_num) && mlen < 40){
+	/* If this is the last payload they're going to send us, help the 
+	   sender terminate by re-sending my ack. */
+	char resp[BSIZE];
+	memset(resp, 0, BSIZE);
+	resp[0] = '2';
+	resp[1] = my_seq_num + '0';
+	uint16_t crc = getCRC2(resp, strlen(resp));
+	uint8_t left = crc  >> 8;
+	uint8_t right = crc & 0xFF;
+	resp[2] = left;
+	resp[3] = right;
+	ack_resends++;
+	int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      }
+      /* Otherwise we want them to just time out and resend window. */
       continue;
     }
 
@@ -148,10 +164,17 @@ int main(int argc, char**argv)
 
     /* Update my expected sequence number. */
     cout << "Increasing..\n";
-    my_seq_num = (my_seq_num+1) % 7;
+    my_seq_num = (my_seq_num+1) % 8;
+    cout << "Requesting: " << my_seq_num << endl;
     resp[1] = my_seq_num + '0';
-
     resp[2] = w + '0';
+    uint16_t crc = getCRC2(resp, strlen(resp));
+    
+    uint8_t left = crc  >> 8;
+    uint8_t right = crc & 0xFF;
+    resp[3] = left;
+    resp[4] = right;
+    
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
     memset(buf, 0, sizeof(buf));
@@ -162,6 +185,7 @@ int main(int argc, char**argv)
   char resp[1];
   memset(resp, 0, 1);
   resp[0] = '5'; // 5 = FINACK
+  acks_sent++;
   int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
   if (sent < 0) cout << "ERROR\n";
   // wait for ACK from receiver, since receiver has acknowledged my FINACK.
@@ -173,10 +197,18 @@ int main(int argc, char**argv)
   char msg_type = buf[0];
   char sender_seq_num = buf[1];
   if (msg_type == '2') {
-    cout << "wrote a total of: " << total << " bits." << endl;
+
     cout << "...program terminated." << endl;
-    exit(1);
   }
+
+  cout << "\n<----- Summary ----->\n";
+  cout << "Wrote to file: " << total << " bits." << endl;
+  cout << "Datagrams that failed CRC: " << failed_datagrams << endl;
+  cout << "ACKs sent: " << acks_sent << endl;
+  cout << "ACK resends: " << ack_resends << endl;
+  cout << "Timeouts: " << time_outs << endl;
+  cout << endl;
+  
   close(sd);
   exit(0);
 }

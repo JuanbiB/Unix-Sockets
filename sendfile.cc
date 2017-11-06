@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include "nsendto.c"
-#include "types.cc"
 #include "crc_generator.cc"
 
 #define MAXBUFFER        40
@@ -54,6 +53,7 @@ bool time_out(int sd) {
 }
 
 int build_payload(char* payload, FILE* f_send, int sender_seq_num){
+  memset(payload, 0, MAXLINE);
   payload[0] = '1'; // DATA
   payload[1] = sender_seq_num + '0';
   /* Reading in data from file. */
@@ -98,6 +98,29 @@ int find_size(char* buffer) {
   return size;
 }
 
+void log(string s) {
+  cout << s << endl;
+}
+
+int diff_between(int a, int b){
+  int diff = 0;
+  while (a != b){
+    diff++;
+    a = (a+1)%8;
+  }
+  return diff;
+}
+
+void print_frames(char frames[7][MAXLINE]){
+  cout << "\n---------------------\n";
+  for (int i = 0; i < 7; i++){
+    for (int j = 0; j < MAXLINE; j++){
+      cout << frames[i][j];
+    }
+  }
+  cout << "\n---------------------\n";
+}
+
 int main(int argc, char* argv[]) {
   char* host_name; // Host to send file to. 
   int port_number; // Port number of host.
@@ -120,8 +143,6 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  cout << byte_err_p << endl;
-  cout << drop_p << endl;
   ninit(drop_p, byte_err_p);
   // 1) Create socket with hostname and post.
   // 2) Bind to it.
@@ -198,119 +219,143 @@ int main(int argc, char* argv[]) {
 
   int seq_max = 7;
   
+
+  /* Initial send to get us started. */
+  for (int i = 0; i < 7; i++){
+    memset(payload, 0, MAXLINE);
+    int read = build_payload(payload, f_send, sender_seq_num);
+    read_so_far += read;
+
+    int sqq = sender_seq_num % FRAME_NUM;
+    cout << "Sending frame number: " << sqq << endl;
+    sender_seq_num++;
+
+    copy_buffer(payload, read+4, frames[i]);
+    frame_len[i] = read+4;
+
+    /* Send a message to the server. */
+    int sent_bytes = 0;
+    if((sent_bytes = sendto(sd, frames[i], read+4, 0,
+			    (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+      perror("sendto");
+      exit(1);
+    }
+  }
+
+  int sent_datagrams = 7;
+  int resends = 0;
+  int failed_acks = 0;
+  int num_time_outs = 0;
+
+  int Rn; /* Request number. Received from receiver. */
+  int Sb = 0; /* Sequence base. */
+  int Sm = 6; /* I just sent 0 - 6*/
+
   while (true) {
-    /* Initial send to get us started. */
-    for (int i = 0; i < 7; i++){
-      memset(payload, 0, MAXLINE);
-      int read = build_payload(payload, f_send, sender_seq_num);
-      read_so_far += read;
+    bool timed_out = time_out(sd);
+    log("receiving...");
 
-      int sqq = sender_seq_num % FRAME_NUM;
-      cout << "Sending frame number: " << sqq << endl;
-      sender_seq_num++;
-
-      copy_buffer(payload, read+4, frames[i]);
-      frame_len[i] = read+4;
-
-      /* Send a message to the server. */
-      int sent_bytes = 0;
-      if((sent_bytes = sendto(sd, frames[i], read+4, 0,
-			       (struct sockaddr*)&sad, sizeof(sad))) < 0) {
-	perror("sendto");
+    if (!timed_out) {
+      /* Receive packet. */
+      if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
+			  (struct sockaddr*)&sad, &fromlen)) < 0) {
+	perror("recvfrom");
 	exit(1);
       }
-    }
 
-    int N = 7; /* Window size. */
-    int Sm = N - 1; /* Sequence max. */
-    int Rn; /* Request number. Received from receiver. */
-    int Sn = 0; /* Sequence number. */
-    int Sb = 0; /* Sequence base. */
-    int Af; /* Frame that just got acked*/
-
-    while (true) {
-      bool timed_out = time_out(sd);
-      cout << "waiting..\n";
-      if (!timed_out) {
-	/* Receive packet. */
-	if((nbytes=recvfrom(sd, recvline, MAXLINE, 0,
-			    (struct sockaddr*)&sad, &fromlen)) < 0) {
-	  perror("recvfrom");
-	  exit(1);
-	}
+      uint16_t recv_crc = getCRC2(recvline, nbytes);
+      if (recv_crc != 0) {
+	failed_acks++;
+	continue;
+      }
 	
-	int Rn = (recvline[1] - '0') % FRAME_NUM;
-	cout << "Request number: " << Rn << endl;
+      int Rn = (recvline[1] - '0');
+      cout << "Request number: " << Rn << endl;
+      
+      /* When an expected ACK is received, advance window, send more frame(s).*/
+      /* If the ack is anywhere between the expected frames, we're good.
+	 E.g. If I send |1,2,3,4,5,6| and get ACK 3, then we can move the window 
+	 forward to |3,4,5,6,7,1,0|. But I shouldn't get 0, because how could it request
+	 it if I haven't even sent 7... */
+      if (Rn != Sb) {
+	/* The base is now the last requested number..*/
+	int slide_amount = diff_between(Sb, Rn);
+	cout << "Slide amount: " << slide_amount << endl;
 
-	/* When an expected ACK is received, advance window, send more frame(s).*/
-	/* If the requested frame is the same as the expected one.  */
-	if (Rn == Sn) {
-	  cout << "Accepted.\n";
-	  /* What's the frame that just got acked? */
-	  if (Rn == 0) Af = 6; /* 0 -> 6*/
-	  if (Rn > 0) Af -= 1; /* 5 -> 4*/
+	/* Slide the window to the left. */
+	for (int i = 0; i < 7; i++){
+	  for (int j = 0; j < MAXLINE; j++){
+	    frames[i][j] = frames[i+slide_amount][j];
+	  }
+	}
+	/* Shifting frame length values. */
+	for (int i = 0; i < 7; i++){
+	  frame_len[i] = frame_len[i+slide_amount];
+	}
+	/* Clear data for new paylods and frame lengths.  */
+	for (int i = (7-slide_amount); i < 7; i++){
+	  memset(frames[i], 0, MAXLINE);
+	  frame_len[i] = 0;
+	}
 
-	  /* The base is now what we're about to send.*/
-	  Sb = Rn;
-	  cout << "Sending: " << Rn << endl;
-	  /* We build the payload with the requested sequence number. */
-	  int read = build_payload(payload, f_send, Rn);
+	/* Calculate new sequence base and sequence max. */
+	Sb = Rn;
+	int last_max = Sm;
+	Sm = (Sm + slide_amount) % 8;
 
-	  /* We now expect the next frame. */
-	  Sn = (Sn + 1)%7;
+	/* We build the payload with the requested sequence number. */
+	int curr = (last_max + 1) % 8;
+	int write_spot = (7 - slide_amount);
+	cout << "Advancing window...\n";
+	while (true){
+	  int read = build_payload(payload, f_send, curr);
 
-	  /* If no packet in transmission, transmist a packet where Sb <= Sn <= Sm ???*/
 	  if (read > 0) {
-
 	    int sent_bytes = 0;
+
 	    if((sent_bytes = nsendto(sd, payload, read+4, 0,
 				     (struct sockaddr*)&sad, sizeof(sad))) < 0) {
 	      perror("sendto");
 	      exit(1);
 	    }
-	    
+	    sent_datagrams++;
 	    /* Overwite the spot where the last ack'd frame was. */
-	    // cout << "Ovewriting: " << frames[Rn] << endl;
-	    // cout << "With: " << payload << endl;
-	    copy_buffer(payload, read+4, frames[Rn]);
-	    frame_len[Rn] = read+4;
-
-	  } else {
+	    copy_buffer(payload, read+4, frames[write_spot]);
+	    frame_len[write_spot] = read+4;
+	  }
+	  else {
 	    timed_out = time_out(sd);
 	    if (timed_out) break;
 	  }
-
+	  curr = (curr + 1) % 8;
+	  if (curr == ((Sm + 1) % 8)) break;
+	  write_spot++;
 	}
-	/* When an unexpected ACK is received, it can be ignored or used as a trigger to resend. */
-	/* If we do have unexpected seq nums, but there's nothing else lined up, then they missed one of
-	   our payloads.. */
-	else {
-	  timed_out = time_out(sd);
-	  if (timed_out){
-	    cout << "Resending... HERE\n";
-	    int sent_bytes = 0;
-	    if((sent_bytes = nsendto(sd, frames[Rn], frame_len[Rn], 0,
-				     (struct sockaddr*)&sad, sizeof(sad))) < 0) {
-	      perror("sendto");
-	      exit(1);
-	    }
+      }
+      /* When an unexpected ACK is received, 
+	 it can be ignored or used as a trigger to resend. */
+      else {
+	log("Unexpected ACK, ignoring.\n");
+      }
+    }
+    /* If a timeout occurs without an ACK, resend all unackowledged frames. */
+    else {
+      cout << "Timeout...\n";
+      num_time_outs++;
+      if (frames[0][0] == 0) break;
+      for (int i = 0; i < 7; i++){
+	int sent_bytes = 0;
+	/* We only send if that frame isn't null. */
+	if (frames[i][0] != 0) {
+	  resends++;
+	  if((sent_bytes = nsendto(sd, frames[i], frame_len[i], 0,
+				  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+	    perror("sendto");
+	    exit(1);
 	  }
 	}
       }
-      
-      /* If a timeout occurs without an ACK, resend all unackowledged frames. */
-      else {
-	// /* All 'unacknowledged' frames. How much do I get from the buffer and how much do I read in? */
-	cout << "Resending...\n";
-	int sent_bytes = 0;
-	if((sent_bytes = nsendto(sd, frames[Rn], frame_len[Rn], 0,
-				 (struct sockaddr*)&sad, sizeof(sad))) < 0) {
-	  perror("sendto");
-	  exit(1);
-	}
-      }
     }
-    break;
   }
   
   /* Handle termination of file transfer. */
@@ -347,7 +392,15 @@ int main(int argc, char* argv[]) {
       exit(1);
     }
   }
-  cout << "File size: " << file_size << endl;  
+  
+  cout << "\n<----- Summary ----->\n";
+  cout << "File size: " << file_size << endl;
+  cout << "Datagrams sent: " << sent_datagrams << endl;
+  cout << "Resends: " << resends << endl;
+  cout << "ACKs that failed CRC: " << failed_acks << endl;
+  cout << "Timeouts: " << num_time_outs << endl;
+  cout << endl;
+
   /* Close the socket. */
   fclose(f_send);
   close(sd);

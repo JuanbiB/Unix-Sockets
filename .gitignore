@@ -16,3 +16,9 @@ recv
 *.pdf
 
 *.txt
+
+*.cc#
+
+*.java
+
+gen

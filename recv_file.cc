@@ -15,6 +15,7 @@
 #include <errno.h>
 
 #include "nsendto.c"
+#include "crc_generator.cc"
 
 #define BSIZE           40              /* size of data buffer */
 
@@ -45,8 +46,9 @@ int main(int argc, char**argv)
   if (argc > 4) {
     port_number = atoi(argv[1]);
     file_name = argv[2];
-    drop_p = atoi(argv[3]);
-    byte_err_p = atoi(argv[4]);
+    char* ptr;
+    drop_p = strtod(argv[3], &ptr);
+    byte_err_p = strtod(argv[4], &ptr);
   }
   else {
     cout << "Not enough arguments.\n";
@@ -84,49 +86,55 @@ int main(int argc, char**argv)
 
   /* Main server loop - receive and handle requests */
   FILE* f_recv = fopen(file_name, "wb");
-  char my_seq_num = '0';
+  int my_seq_num = 0;
   int total = 0;
   
   while (true) {
-    /* Inner loop.  Read and echo data received from client. */
-
+    /* Continue received data from client. */
     mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
-    
-    /* Once there's something to receive, we receive it. */
-    // mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad,
-    //     &fromlen);
     if (mlen < 0) {
       perror("recvfrom");
       exit(1);
     }
-    /* CRC code in buf[mlen-2] and buf[mlen-1]! */
-    char msg_type = buf[0];
-    char sender_seq_num = buf[1];
 
+    char msg_type = buf[0];
     /* File transfer is done! Break out, handle termination. */
     if (msg_type == '4') {
+      cout << "FIN RECEIVED\n";
       break;
     }
-    /* This basically means sender didn't get my last ACK. 
-       So I resend it and don't write payload to file (would be a 
-       a duplicate). */
-    if (my_seq_num != sender_seq_num) {
-      /* You should modularize this since it's repeated code from below.*/
-      char resp[2];
-      memset(resp, 0, 2);
+
+    int sender_seq_num = (buf[1] - '0');
+    cout << "--------------------" << endl;
+    cout << "Received seq num: " << sender_seq_num << endl;
+    cout << "expected  seq num " << my_seq_num << endl;
+    
+    /* CRC code in buf[mlen-2] and buf[mlen-1]! */
+    uint8_t crc1 = buf[mlen-2];
+    uint8_t crc2 = buf[mlen-1];
+
+    uint16_t crc_generated = getCRC2(buf, mlen);
+    
+    /* If we get a payload with data error or a wrong sequence number, 
+       we resend with the seq number of the expected packet. */
+    if ((my_seq_num != sender_seq_num) || (crc_generated != 0)) {
+      cout << "Rejected packet. \n";
+      char resp[BSIZE];
+      memset(resp, 0, BSIZE);
       resp[0] = '2'; // 2 = ACK
-      resp[1] = sender_seq_num;
-      int sent = nsendto(sd, resp, 2, 0, (struct sockaddr *)&cad, fromlen);
+      resp[1] = my_seq_num + '0'; // expected seq num. 
+      int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
       if (sent < 0) cout << "ERROR\n";
+      memset(buf, 0, sizeof(buf));
       continue;
     }
+
     /* Extracting payload data. */
     char payload_data[BSIZE];
     memset(payload_data, 0, BSIZE);
     for (int i = 2, j = 0; i < mlen-2; i++, j++) {
       payload_data[j] = buf[i]; 
     }
-    memset(buf, 0, sizeof(buf));
 
     /* Write payload data to file! */
     int w = fwrite(payload_data, 1, mlen-4, f_recv);
@@ -137,10 +145,16 @@ int main(int argc, char**argv)
     char resp[BSIZE];
     memset(resp, 0, BSIZE);
     resp[0] = '2'; // 2 = ACK
-    resp[1] = sender_seq_num; // 1 or 0
+
+    /* Update my expected sequence number. */
+    cout << "Increasing..\n";
+    my_seq_num = (my_seq_num+1) % 7;
+    resp[1] = my_seq_num + '0';
+
+    resp[2] = w + '0';
     int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
     if (sent < 0) cout << "ERROR\n";
-    my_seq_num = advance_seq_num(my_seq_num);
+    memset(buf, 0, sizeof(buf));
   }
 
   // Handle termination!

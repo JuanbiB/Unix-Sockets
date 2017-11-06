@@ -7,6 +7,8 @@ static double byteProbability=0.0;
 static int initialized = 0;
 static int cleanused = 0;
 
+using namespace std;
+
 void ninit(double dropP, double byteP){
   dropProbability = dropP;
   byteProbability = byteP;
@@ -27,6 +29,7 @@ ssize_t nsendto(int sd, void*msg, ssize_t len, int flags,
 	gmsg[i] = ((char*)msg)[i];
 	x = drand48();
 	if(x<byteProbability){
+	  cout << "PLANTING BIT ERROR!\n";
 	  gmsg[i] ^= ((i*57) % 256);
 	}
       }

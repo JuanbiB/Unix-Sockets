@@ -365,32 +365,52 @@ int main(int argc, char* argv[]) {
   int fin_seq = sender_seq_num % FRAME_NUM;
   end[0] = '4';
   end[1] = fin_seq + '0';
-  /* Send FIN.  */
+  /* Send FIN. */
   if((sent_bytes = sendto(sd, end, 2, 0,
 			  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
     perror("sendto");
     exit(1);
   }
+  /* At this point we have sent the FIN. We are now waiting for receiver's ACK. */
   socklen_t size = sizeof(struct sockaddr);
   int rec;
+  bool timed_out = time_out(sd);
   /* Receive FINACK.  */
-  if((rec = recvfrom(sd, recvline, MAXLINE, 0,
-		     (struct sockaddr*)&sad, &size)) < 0) {
-    perror("recvfrom");
-    exit(1);
-  }
-  cout << "Received at end: " << recvline[0] << endl;
-  if (true) {
-    int sent_bytes;
-    char end[MAXLINE];
-    memset(end, 0, MAXLINE);
-    /* Send ACK.  */
-    end[0] = '2'; 
-    if((sent_bytes = sendto(sd, end, 2, 0,
-			    (struct sockaddr*)&sad, sizeof(sad))) < 0) {
-      perror("sendto");
-      exit(1);
+  while (true) {
+    if (!timed_out) {
+      if((rec = recvfrom(sd, recvline, MAXLINE, 0,
+        (struct sockaddr*)&sad, &size)) < 0) {
+        perror("recvfrom");
+        exit(1);
+      }
+      cout << "Received at end: " << recvline[0] << endl;
+      break;
     }
+    else { //timed out, keep resending
+      int sent_bytes;
+      char end[MAXLINE];
+      memset(end, 0, MAXLINE);
+      /* Send ACK. */
+      end[0] = '2';
+      end[1] = fin_seq + '0'; 
+      if((sent_bytes = sendto(sd, end, 2, 0,
+            (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+        perror("sendto");
+        exit(1);
+      }
+      cout << "ACK RESENT\n";
+      timed_out = time_out(sd);
+    }
+  }
+  /* At this point, first FINACK received, now send another ACK. */
+  memset(end, 0, MAXLINE);
+  end[0] = '2';
+  end[1] = fin_seq + '0';
+  /* Send FIN.  */
+  if((sent_bytes = sendto(sd, end, 2, 0,
+			  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
+    perror("sendto");
+    exit(1);
   }
   
   cout << "\n<----- Summary ----->\n";

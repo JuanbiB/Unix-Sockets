@@ -18,6 +18,7 @@
 #include "crc_generator.cc"
 
 #define BSIZE           40              /* size of data buffer */
+#define TIMEOUT         100
 
 using namespace std;
 
@@ -25,6 +26,29 @@ char advance_seq_num (char seq_num) {
   if (seq_num == '0')
     return '1';
   return '0';
+}
+
+bool time_out(int sd) {
+  // Set up a pollfd structure
+  struct pollfd pollstr;
+  pollstr.fd = sd; // the file descriptor for the socket you are using
+  pollstr.events = POLLIN; // the events on the descriptor that you want to poll for
+  struct pollfd pollarr[1];
+  pollarr[0] = pollstr;
+
+  int n = poll(pollarr, 1, TIMEOUT); // 1 = array size, 100 = timeout value in ms
+  // Received, read and go ahead
+  if(n > 0) {
+    return false;
+  }
+  // Timeout!
+  else if(n == 0) {
+    return true;
+  }
+  else {
+    cout << "Other error\n";
+    exit(1);
+  }
 }
 
 int main(int argc, char**argv)
@@ -181,23 +205,57 @@ int main(int argc, char**argv)
   }
 
   // Handle termination!
-  fclose(f_recv);
-  char resp[1];
-  memset(resp, 0, 1);
-  resp[0] = '5'; // 5 = FINACK
-  acks_sent++;
-  int sent = sendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
-  if (sent < 0) cout << "ERROR\n";
+  bool timed_out = time_out(sd);
+  while (true) {
+    if (!timed_out) {
+      fclose(f_recv);
+      /* At this point we have received the FIN message. Now send a FINACK and
+         wait for an ACK packet. */
+      char resp[1];
+      memset(resp, 0, 1);
+      resp[0] = '5'; // 5 = FINACK
+      acks_sent++;
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      break;
+    }
+    else { // we have timed out.
+      char resp[1];
+      memset(resp, 0, 1);
+      resp[0] = '2'; // 2 = ACK
+      acks_sent++;
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      cout << "ACK RESENT\n";
+      timed_out = time_out(sd);
+    }
+  }
   // wait for ACK from receiver, since receiver has acknowledged my FINACK.
-  mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
-  if (mlen < 0) {
-    perror("recvfrom");
-    exit(1);
+  timed_out = time_out(sd);
+  while (true) {
+    if (!timed_out) {
+      mlen = recvfrom(sd, buf, BSIZE, 0, (struct sockaddr *)&cad, &fromlen);
+      if (mlen < 0) {
+        perror("recvfrom");
+        exit(1);
+      }
+      break;
+    }
+    else {
+      char resp[1];
+      memset(resp, 0, 1);
+      resp[0] = '5'; // 5 = FINACK
+      acks_sent++;
+      int sent = nsendto(sd, resp, strlen(resp), 0, (struct sockaddr *)&cad, fromlen);
+      if (sent < 0) cout << "ERROR\n";
+      cout << "FINACK RESENT\n" ;
+      timed_out = time_out(sd);
+    }
   }
   char msg_type = buf[0];
+  cout << "msg_type: " << msg_type << endl;
   char sender_seq_num = buf[1];
   if (msg_type == '2') {
-
     cout << "...program terminated." << endl;
   }
 

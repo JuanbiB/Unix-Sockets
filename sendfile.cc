@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
   end[0] = '4';
   end[1] = fin_seq + '0';
   /* Send FIN. */
-  if((sent_bytes = sendto(sd, end, 2, 0,
+  if((sent_bytes = nsendto(sd, end, 2, 0,
 			  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
     perror("sendto");
     exit(1);
@@ -390,10 +390,10 @@ int main(int argc, char* argv[]) {
       int sent_bytes;
       char end[MAXLINE];
       memset(end, 0, MAXLINE);
-      /* Send ACK. */
-      end[0] = '2';
+      /* Resend FIN. */
+      end[0] = '4';
       end[1] = fin_seq + '0'; 
-      if((sent_bytes = sendto(sd, end, 2, 0,
+      if((sent_bytes = nsendto(sd, end, 2, 0,
             (struct sockaddr*)&sad, sizeof(sad))) < 0) {
         perror("sendto");
         exit(1);
@@ -407,7 +407,7 @@ int main(int argc, char* argv[]) {
   end[0] = '2';
   end[1] = fin_seq + '0';
   /* Send FIN.  */
-  if((sent_bytes = sendto(sd, end, 2, 0,
+  if((sent_bytes = nsendto(sd, end, 2, 0,
 			  (struct sockaddr*)&sad, sizeof(sad))) < 0) {
     perror("sendto");
     exit(1);
